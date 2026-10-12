@@ -1,0 +1,18 @@
+{
+  "schema": 3,
+  "plugin_id": "memgke-qq-pet",
+  "name": "QQ 宠物管理",
+  "version": "1.0.2",
+  "min_framework": "2.5.4",
+  "author": "e4je",
+  "description": "QQ 宠物管理、自动托管和自动 PK。",
+  "notes": "新增萌卡 NT 托管导入包、自动连接、框架管理员入口、生命周期控制及持久化目录适配。",
+  "runtime": {
+    "entry": "bin/qq-pet",
+    "args": [],
+    "transport": "websocket-v1",
+    "health_path": "/api/managed/health",
+    "admin": true,
+    "events": ["group_message", "friend_message", "group_event", "friend_event", "bot_offline"]
+  }
+}

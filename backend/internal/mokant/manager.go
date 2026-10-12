@@ -65,6 +65,9 @@ func (m *Manager) Reload(ctx context.Context) error {
 		}
 		client := NewClient(m.cfg, m.logger)
 		client.setEventHandler(eventHandler)
+		if connection := m.cfg.ManagedConnection; connection != nil {
+			host, port, token = connection.Host, connection.Port, connection.Token
+		}
 		client.Configure(host, port, token)
 		configured[id] = client
 	}
@@ -149,6 +152,10 @@ func (m *Manager) Nodes(ctx context.Context) ([]Node, error) {
 		}
 		if client, err := m.Client(node.ID); err == nil {
 			node.Status = client.Status()
+			if connection := m.cfg.ManagedConnection; connection != nil {
+				node.Name = "萌卡托管连接"
+				node.Host, node.Port, node.TokenSet = connection.Host, connection.Port, true
+			}
 		}
 		nodes = append(nodes, node)
 	}

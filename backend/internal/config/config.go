@@ -6,23 +6,33 @@ import (
 	"strings"
 )
 
+var buildVersion = "1.0.1"
+
 type Config struct {
-	Addr           string
-	Version        string
-	Environment    string
-	DatabasePath   string
-	FrontendOrigin string
-	CookieName     string
-	SessionHours   int
-	CookieSecure   bool
-	LoginLimit     int
-	LoginWindowSec int
+	// ManagedConnection is process-local; never persist the framework token.
+	ManagedConnection *ManagedConnection `json:"-"`
+	Addr              string
+	Version           string
+	Environment       string
+	DatabasePath      string
+	FrontendOrigin    string
+	CookieName        string
+	SessionHours      int
+	CookieSecure      bool
+	LoginLimit        int
+	LoginWindowSec    int
+}
+
+type ManagedConnection struct {
+	Host  string
+	Port  int
+	Token string `json:"-"`
 }
 
 func Load() Config {
 	return Config{
 		Addr:           envString("APP_ADDR", ":8080"),
-		Version:        envString("APP_VERSION", "1.0.1"),
+		Version:        envString("APP_VERSION", buildVersion),
 		Environment:    envString("APP_ENV", "development"),
 		DatabasePath:   envString("DATABASE_PATH", "./data/qq-pet.db"),
 		FrontendOrigin: envString("FRONTEND_ORIGIN", "http://localhost:5173"),

@@ -13,6 +13,12 @@
 !.dockerignore
 !.env.docker.example
 !pet-pk-strangers.txt
+!mengka-plugin.json
+!scripts/
+!scripts/**
+!.github/
+!.github/workflows/
+!.github/workflows/**
 
 # Runtime data and secrets
 **/data/
@@ -35,6 +41,7 @@
 # Dependencies and generated output
 **/node_modules/
 **/dist/
+**/plugin-dist/
 **/.frontend-build/
 **/coverage/
 

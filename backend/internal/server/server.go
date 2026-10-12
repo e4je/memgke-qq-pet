@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -37,9 +36,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
-
-//go:embed frontend-dist
-var frontendDist embed.FS
 
 var petSnapshotMu sync.Mutex
 
@@ -74,7 +70,7 @@ func NewRouter(db *sql.DB, cfg config.Config, logger *slog.Logger, clients ...an
 	router.Get("/healthz", healthHandler(db))
 	router.Get("/api/version", versionHandler(cfg))
 	authService := auth.NewService(db, cfg)
-	router.Mount("/", authService.Routes())
+	router.Mount("/api/auth", authService.Routes())
 	if logHub != nil {
 		router.With(authService.RequireAdmin).Handle("/ws/admin/mokant/logs", logHub)
 	}
@@ -218,6 +214,7 @@ func NewRouter(db *sql.DB, cfg config.Config, logger *slog.Logger, clients ...an
 	router.With(authService.RequireAdmin).Post("/api/admin/announcements", announcementService.Create)
 	router.With(authService.RequireAdmin).Patch("/api/admin/announcements/{id}", announcementService.Update)
 	router.With(authService.RequireUser).Post("/api/wallet/redeem", redeemHandler(walletService))
+	router.NotFound(frontendHandler().ServeHTTP)
 	return router
 }
 

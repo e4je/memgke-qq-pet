@@ -21,6 +21,7 @@ import (
 	"qq-pet/backend/internal/config"
 	"qq-pet/backend/internal/database"
 	"qq-pet/backend/internal/logstream"
+	"qq-pet/backend/internal/managed"
 	"qq-pet/backend/internal/mokant"
 	"qq-pet/backend/internal/officialbot"
 	"qq-pet/backend/internal/server"
@@ -28,7 +29,12 @@ import (
 
 func main() {
 	cfg := config.Load()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	runtime, err := managed.Load(&cfg)
+	if err != nil {
+		logger.Error("managed runtime initialization failed", "error", err)
+		os.Exit(1)
+	}
 
 	db, err := database.Open(cfg.DatabasePath)
 	if err != nil {
@@ -42,13 +48,22 @@ func main() {
 		os.Exit(1)
 	}
 	reader := bufio.NewReader(os.Stdin)
-	if err := loadOrInitializeAddress(db, &cfg, reader); err != nil {
-		logger.Error("configuration loading failed", "error", err)
-		os.Exit(1)
-	}
-	if err := loadOrInitializeAdmin(db, &cfg, reader); err != nil {
-		logger.Error("admin initialization failed", "error", err)
-		os.Exit(1)
+	var managedUser auth.User
+	if runtime != nil {
+		managedUser, err = auth.EnsureManagedAdmin(db, runtime.InstanceID)
+		if err != nil {
+			logger.Error("managed administrator initialization failed", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		if err := loadOrInitializeAddress(db, &cfg, reader); err != nil {
+			logger.Error("configuration loading failed", "error", err)
+			os.Exit(1)
+		}
+		if err := loadOrInitializeAdmin(db, &cfg, reader); err != nil {
+			logger.Error("admin initialization failed", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	logHub := logstream.NewHub()
@@ -61,12 +76,24 @@ func main() {
 	mokantManager.Start(context.Background())
 	mokantClient := mokant.NewManagerClient(cfg, logger, mokantManager)
 	autoControlScheduler := autocontrol.NewScheduler(db, mokantClient, logger, botNotifier)
-	autoControlScheduler.Start(context.Background())
 	autoPKScheduler := autopk.NewScheduler(db, mokantClient, logger)
-	autoPKScheduler.Start(context.Background())
+	startBusiness := func() {
+		autoControlScheduler.Start(context.Background())
+		autoPKScheduler.Start(context.Background())
+	}
+	stopBusiness := func() {
+		autoPKScheduler.Stop()
+		autoControlScheduler.Stop()
+	}
+	handler := server.NewRouter(db, cfg, logger, mokantManager, autoControlScheduler, autoPKScheduler, botNotifier, logHub)
+	if runtime != nil {
+		handler = runtime.Wrap(handler, managedUser, func() bool { return mokantClient.Status().Connected }, startBusiness, stopBusiness)
+	} else {
+		startBusiness()
+	}
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.NewRouter(db, cfg, logger, mokantManager, autoControlScheduler, autoPKScheduler, botNotifier, logHub),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -87,8 +114,11 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	autoPKScheduler.Stop()
-	autoControlScheduler.Stop()
+	if runtime != nil {
+		runtime.Close()
+	} else {
+		stopBusiness()
+	}
 	mokantManager.Stop()
 	if err := httpServer.Shutdown(ctx); err != nil {
 		logger.Error("server shutdown failed", "error", err)
@@ -111,6 +141,7 @@ func loadOrInitializeAddress(db *sql.DB, cfg *config.Config, reader *bufio.Reade
 		if _, err := db.Exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('app_addr', ?)", address); err != nil {
 			return err
 		}
+		err = nil
 	}
 	if err != nil {
 		return err

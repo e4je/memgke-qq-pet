@@ -4,6 +4,31 @@
 
 本系统的 QQ 宠物接入后台框架为 [萌卡 NT（Mengka-NT）](https://mknt.net/)，通过其节点与接口提供相关能力；本仓库实现独立的 Go 管理服务和 Vue 前端，需要配置可用的萌卡 NT 服务才能使用相关功能。
 
+## 导入萌卡 NT 插件（1.0.2 起）
+
+源码 ZIP、Docker 镜像和旧版前后端双程序压缩包不能直接用于“插件导入”。萌卡 NT 2.5.4+ 要求成品包根目录有 schema 3 的 `mengka-plugin.json`，并包含当前系统可直接执行的入口。本项目新增 `websocket-v1` 托管包，单个 Go 进程内嵌网页，不依赖目标机器安装 Go 或 Node.js。
+
+1. 从本项目 Actions 的 **Build Mengka plugin** 成功运行中下载 `mengka-plugin-packages` artifact 并解压外层压缩包。
+2. 按**萌卡所在服务器**的系统和架构选择里面的 `memgke-qq-pet-1.0.2-windows-amd64.zip`、`memgke-qq-pet-1.0.2-linux-amd64.zip` 或 `memgke-qq-pet-1.0.2-linux-arm64.zip`。不要上传 artifact 外层 ZIP 或 GitHub 的 Source code ZIP。
+3. 在萌卡“插件 → 插件导入”上传对应 ZIP，确认来源与权限，启动后从卡片进入管理后台。框架管理员会自动映射为插件管理员，无需在终端输入端口或账号密码，也无需手填 WebSocket Token。
+
+托管模式使用框架分配的回环管理端口、每次启动的私有连接文件和持久化数据目录；令牌仅保留在进程内存中。程序连接框架后等待 `activate` 才启动自动托管和 PK，收到 `stop` 时停止任务。后台校验框架网关令牌、回环来源和管理 Origin；直接访问内部端口会返回 401。托管后台用于框架管理员访问；需要普通用户自行注册登录的公网网站请继续使用下面的独立部署方式。
+
+数据保存于 `MENGKA_PLUGIN_DATA_DIR/qq-pet.db`，不写进安装包目录。升级时保持插件 ID 不变，并提高 `mengka-plugin.json` 的三段版本号；萌卡会拒绝同版本或降级包。旧独立部署的数据不会自动搬迁，迁移前停止两端并备份数据库及相关文件。
+
+### 自行构建导入包
+
+安装 Go 1.26+、Node.js 22.12+ 后，在仓库根目录执行：
+
+```sh
+npm --prefix frontend ci
+node scripts/build-plugin.mjs
+```
+
+默认生成三个平台的 ZIP 和 `SHA256SUMS.txt`，位于 `dist/plugins/`。也可只构建一个平台：`node scripts/build-plugin.mjs windows-amd64`。脚本重新构建 Vue、嵌入资源并交叉编译，将描述文件置于 ZIP 根目录，Windows 自动使用 `.exe` 入口，Linux 入口保留执行权限。无需改动原独立部署配置。
+
+开发验证：在 `backend` 下运行 `go test ./...`；构建包后还可运行 `go test -tags mengka ./...`，验证实际嵌入资源。集成测试使用模拟框架连接验证非交互启动、SSO、生命周期、令牌轮换与重启数据保留，不会操作真实 QQ 账号。
+
 > [!IMPORTANT]
 > 本项目仍在持续开发中，接口和数据结构可能发生变化。涉及 QQ 账号、Token、Cookie 等敏感信息时，请仅在可信环境中部署，并在使用前自行评估风险。
 

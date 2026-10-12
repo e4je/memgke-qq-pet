@@ -279,6 +279,9 @@ func (s *Service) changePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) userFromRequest(r *http.Request) (User, error) {
+	if user, ok := UserFromContext(r.Context()); ok {
+		return user, nil
+	}
 	cookie, err := r.Cookie(s.cfg.CookieName)
 	if err != nil || cookie.Value == "" {
 		return User{}, errUnauthorized

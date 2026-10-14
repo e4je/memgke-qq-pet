@@ -2,9 +2,7 @@
 
 package server
 
-import "embed"
+import "testing/fstest"
 
-//go:embed frontend-dist
-var frontendDist embed.FS
-
-const frontendDirectory = "frontend-dist"
+// Test-only fallback; distributable builds must use the mengka build tag.
+var frontendDist = fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<!doctype html><html><body>Build the plugin with scripts/build-plugin.mjs</body></html>")}}

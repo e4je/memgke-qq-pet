@@ -1,18 +1,18 @@
 {
   "schema": 3,
   "plugin_id": "memgke-qq-pet",
-  "name": "QQ 宠物管理",
-  "version": "1.0.2",
-  "min_framework": "2.5.4",
+  "name": "QQ 宠物自动化",
+  "version": "2.0.0",
+  "min_framework": "2.6.0",
   "author": "e4je",
   "description": "QQ 宠物管理、自动托管和自动 PK。",
-  "notes": "新增萌卡 NT 托管导入包、自动连接、框架管理员入口、生命周期控制及持久化目录适配。",
+  "notes": "按 2026-10-14 官方 30 项宠物 API 重构，仅保留萌卡插件模式。新增持久化自动任务、活动显式结算、PK finished 判定、库存回读、断线重连及未知结果暂停；旧数据库自动备份，升级后需核对并启用新版计划。",
   "runtime": {
     "entry": "bin/qq-pet",
     "args": [],
     "transport": "websocket-v1",
     "health_path": "/api/managed/health",
     "admin": true,
-    "events": ["group_message", "friend_message", "group_event", "friend_event", "bot_offline"]
+    "events": []
   }
 }

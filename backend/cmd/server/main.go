@@ -1,202 +1,66 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
+	"qq-pet/backend/internal/automation"
+	"qq-pet/backend/internal/config"
+	"qq-pet/backend/internal/managed"
+	"qq-pet/backend/internal/petapi"
+	"qq-pet/backend/internal/server"
 	"syscall"
 	"time"
-
-	"qq-pet/backend/internal/auth"
-	"qq-pet/backend/internal/autocontrol"
-	"qq-pet/backend/internal/autopk"
-	"qq-pet/backend/internal/config"
-	"qq-pet/backend/internal/database"
-	"qq-pet/backend/internal/logstream"
-	"qq-pet/backend/internal/managed"
-	"qq-pet/backend/internal/mokant"
-	"qq-pet/backend/internal/officialbot"
-	"qq-pet/backend/internal/server"
 )
 
 func main() {
+	if err := run(); err != nil {
+		slog.Error("插件退出", "error", err)
+		os.Exit(1)
+	}
+}
+func run() error {
 	cfg := config.Load()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	runtime, err := managed.Load(&cfg)
 	if err != nil {
-		logger.Error("managed runtime initialization failed", "error", err)
-		os.Exit(1)
+		return err
 	}
-
-	db, err := database.Open(cfg.DatabasePath)
+	if runtime == nil {
+		return errors.New("仅支持萌卡 NT 插件托管模式，请在框架中导入并启动")
+	}
+	store, err := automation.Open(cfg.DatabasePath)
 	if err != nil {
-		logger.Error("database initialization failed", "error", err)
-		os.Exit(1)
+		return err
 	}
-	defer db.Close()
-
-	if err := database.Migrate(db); err != nil {
-		logger.Error("database migration failed", "error", err)
-		os.Exit(1)
-	}
-	reader := bufio.NewReader(os.Stdin)
-	var managedUser auth.User
-	if runtime != nil {
-		managedUser, err = auth.EnsureManagedAdmin(db, runtime.InstanceID)
-		if err != nil {
-			logger.Error("managed administrator initialization failed", "error", err)
-			os.Exit(1)
-		}
-	} else {
-		if err := loadOrInitializeAddress(db, &cfg, reader); err != nil {
-			logger.Error("configuration loading failed", "error", err)
-			os.Exit(1)
-		}
-		if err := loadOrInitializeAdmin(db, &cfg, reader); err != nil {
-			logger.Error("admin initialization failed", "error", err)
-			os.Exit(1)
-		}
-	}
-
-	logHub := logstream.NewHub()
-	mokantManager, err := mokant.NewManager(db, cfg, logger, logHub)
-	if err != nil {
-		logger.Error("mokant node initialization failed", "error", err)
-		os.Exit(1)
-	}
-	botNotifier := officialbot.New(db, logger, cfg.Version)
-	mokantManager.Start(context.Background())
-	mokantClient := mokant.NewManagerClient(cfg, logger, mokantManager)
-	autoControlScheduler := autocontrol.NewScheduler(db, mokantClient, logger, botNotifier)
-	autoPKScheduler := autopk.NewScheduler(db, mokantClient, logger)
-	startBusiness := func() {
-		autoControlScheduler.Start(context.Background())
-		autoPKScheduler.Start(context.Background())
-	}
-	stopBusiness := func() {
-		autoPKScheduler.Stop()
-		autoControlScheduler.Stop()
-	}
-	handler := server.NewRouter(db, cfg, logger, mokantManager, autoControlScheduler, autoPKScheduler, botNotifier, logHub)
-	if runtime != nil {
-		handler = runtime.Wrap(handler, managedUser, func() bool { return mokantClient.Status().Connected }, startBusiness, stopBusiness)
-	} else {
-		startBusiness()
-	}
-	httpServer := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
-
+	defer store.Close()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	conn := cfg.ManagedConnection
+	client := petapi.New(conn.Host, conn.Port, conn.Token, cfg.Version)
+	connectionDone := make(chan struct{})
+	go func() { defer close(connectionDone); client.Run(ctx) }()
+	defer func() { stop(); <-connectionDone }()
+	engine := automation.New(client, store)
+	handler := runtime.Wrap(server.New(engine, cfg.Version, client.Connected), client.Connected, engine.Start, engine.Stop)
+	httpServer := &http.Server{Addr: cfg.Addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 60 * time.Second}
+	failed := make(chan error, 1)
 	go func() {
-		logger.Info("server started", "addr", cfg.Addr, "version", cfg.Version)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server stopped unexpectedly", "error", err)
-			os.Exit(1)
-		}
+		slog.Info("QQ 宠物插件已启动", "version", cfg.Version, "address", cfg.Addr)
+		failed <- httpServer.ListenAndServe()
 	}()
-
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	select {
+	case <-ctx.Done():
+	case err = <-failed:
+	}
+	runtime.Close()
+	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if runtime != nil {
-		runtime.Close()
-	} else {
-		stopBusiness()
-	}
-	mokantManager.Stop()
-	if err := httpServer.Shutdown(ctx); err != nil {
-		logger.Error("server shutdown failed", "error", err)
-	}
-}
-
-func loadOrInitializeAddress(db *sql.DB, cfg *config.Config, reader *bufio.Reader) error {
-	var address string
-	err := db.QueryRow("SELECT setting_value FROM system_settings WHERE setting_key = 'app_addr'").Scan(&address)
-	if errors.Is(err, sql.ErrNoRows) || strings.TrimSpace(address) == "" {
-		address = strings.TrimSpace(os.Getenv("APP_ADDR"))
-		if address == "" {
-			var port int
-			port, err = readPort(reader)
-			if err != nil {
-				return err
-			}
-			address = ":" + strconv.Itoa(port)
-		}
-		if _, err := db.Exec("INSERT INTO system_settings (setting_key, setting_value) VALUES ('app_addr', ?)", address); err != nil {
-			return err
-		}
-		err = nil
-	}
-	if err != nil {
-		return err
-	}
-	if address != "" {
-		cfg.Addr = address
-	}
-	return nil
-}
-
-func loadOrInitializeAdmin(db *sql.DB, cfg *config.Config, reader *bufio.Reader) error {
-	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin'").Scan(&count); err != nil {
-		return err
-	}
-	if count > 0 {
+	_ = httpServer.Shutdown(shutdown)
+	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
-	username := strings.TrimSpace(os.Getenv("ADMIN_USERNAME"))
-	password := strings.TrimSpace(os.Getenv("ADMIN_PASSWORD"))
-	if username == "" || password == "" {
-		var err error
-		username, err = readValue(reader, "请输入管理员用户: ")
-		if err != nil {
-			return err
-		}
-		password, err = readValue(reader, "请输入管理员密码: ")
-		if err != nil {
-			return err
-		}
-	}
-	return auth.EnsureAdmin(db, username, password)
-}
-
-func readPort(reader *bufio.Reader) (int, error) {
-	value, err := readValue(reader, "请输入服务端口号: ")
-	if err != nil {
-		return 0, err
-	}
-	port, err := strconv.Atoi(value)
-	if err != nil || port < 1 || port > 65535 {
-		return 0, fmt.Errorf("服务端口号必须是 1-65535 之间的数字")
-	}
-	return port, nil
-}
-
-func readValue(reader *bufio.Reader, prompt string) (string, error) {
-	fmt.Print(prompt)
-	value, err := reader.ReadString('\n')
-	if err != nil && len(value) == 0 {
-		return "", err
-	}
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", fmt.Errorf("输入内容不能为空")
-	}
-	return value, nil
+	return err
 }

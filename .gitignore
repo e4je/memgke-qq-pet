@@ -8,11 +8,6 @@
 !backend/**
 !frontend/
 !frontend/**
-!Dockerfile
-!docker-compose.yml
-!.dockerignore
-!.env.docker.example
-!pet-pk-strangers.txt
 !mengka-plugin.json
 !scripts/
 !scripts/**
@@ -59,6 +54,3 @@ frontend/qq-pet-frontend
 .vscode/
 .DS_Store
 Thumbs.db
-
-# Container setup template and bundled PK source data
-!.env.docker.example

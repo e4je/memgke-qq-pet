@@ -17,9 +17,7 @@ import (
 	"strings"
 	"sync"
 
-	"qq-pet/backend/internal/auth"
 	"qq-pet/backend/internal/config"
-	"qq-pet/backend/internal/response"
 )
 
 type Runtime struct {
@@ -151,7 +149,7 @@ func Load(cfg *config.Config) (*Runtime, error) {
 	cfg.Addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(adminPort))
 	cfg.DatabasePath = filepath.Join(dataDir, "qq-pet.db")
 	cfg.FrontendOrigin = origin.Scheme + "://" + origin.Host
-	cfg.CookieSecure = origin.Scheme == "https"
+
 	cfg.ManagedConnection = &config.ManagedConnection{Host: u.Hostname(), Port: port, Token: token}
 	return &Runtime{InstanceID: c.InstanceID, Origin: cfg.FrontendOrigin, adminToken: adminToken}, nil
 }
@@ -174,7 +172,7 @@ func (rt *Runtime) authorized(r *http.Request) bool {
 
 // Wrap authenticates the gateway before providing SSO and waits for activate
 // before admitting business requests or starting scheduled work.
-func (rt *Runtime) Wrap(next http.Handler, user auth.User, connected func() bool, start, stop func()) http.Handler {
+func (rt *Runtime) Wrap(next http.Handler, connected func() bool, start, stop func()) http.Handler {
 	rt.stop = stop
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !rt.authorized(r) {
@@ -228,17 +226,7 @@ func (rt *Runtime) Wrap(next http.Handler, user auth.User, connected func() bool
 		} else {
 			defer rt.mu.RUnlock()
 		}
-		// The connection is supplied by the framework. Do not let the manual
-		// configuration screen replace it or persist an ephemeral token.
-		if r.URL.Path == "/api/admin/mokant/config" && r.Method == http.MethodGet {
-			response.JSON(w, 200, 0, "连接由萌卡框架托管", map[string]any{"managed": true, "mokant_token_set": true})
-			return
-		}
-		if strings.HasPrefix(r.URL.Path, "/api/admin/mokant/") && r.Method != http.MethodGet && r.URL.Path != "/api/admin/mokant/debug" {
-			response.JSON(w, 409, 4004, "连接由萌卡框架托管，请在框架中管理插件", nil)
-			return
-		}
-		next.ServeHTTP(w, auth.WithManagedAdmin(r, user))
+		next.ServeHTTP(w, r)
 	})
 }
 

@@ -33,7 +33,7 @@ for (const target of targets) {
   const entry = `bin/qq-pet${goos === 'windows' ? '.exe' : ''}`
   const manifest = { ...template, runtime: { ...template.runtime, entry } }
   writeFileSync(join(stage, 'mengka-plugin.json'), JSON.stringify(manifest, null, 2) + '\n')
-  for (const file of ['LICENSE', 'pet-pk-strangers.txt']) {
+  for (const file of ['LICENSE']) {
     if (existsSync(join(root, file))) cpSync(join(root, file), join(stage, file))
   }
   run('go', ['build', '-tags', 'mengka', '-trimpath', '-ldflags', `-s -w -X qq-pet/backend/internal/config.buildVersion=${template.version}`, '-o', join(stage, entry), './cmd/server'], join(root, 'backend'), { ...process.env, GOOS: goos, GOARCH: goarch, CGO_ENABLED: '0' })

@@ -1,0 +1,914 @@
+[
+  {
+    "action": "get_pet_profile",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_profile.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_medal_gallery",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_medal_gallery.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_vitals",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_vitals.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_attributes",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_attributes.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_food_catalog",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_food_catalog.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      }
+    ]
+  },
+  {
+    "action": "feed_pet",
+    "write": true,
+    "url": "https://mknt.net/api/feed_pet.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "food_id",
+        "type": "string",
+        "required": false,
+        "description": "指定食物 ID；不传或空串使用默认食物"
+      },
+      {
+        "name": "feed_type",
+        "type": "number",
+        "required": false,
+        "description": "喂食类型：0（默认）、1001、9990032、9990033、9990034"
+      }
+    ]
+  },
+  {
+    "action": "buy_pet_food",
+    "write": true,
+    "url": "https://mknt.net/api/buy_pet_food.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "count",
+        "type": "number",
+        "required": true,
+        "description": "正整数数量；洗护购买须满足目录步进及上下限"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_bath_catalog",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_bath_catalog.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_bath_inventory",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_bath_inventory.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      }
+    ]
+  },
+  {
+    "action": "bathe_pet",
+    "write": true,
+    "url": "https://mknt.net/api/bathe_pet.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "item_id",
+        "type": "string",
+        "required": true,
+        "description": "洗护目录返回的用品 ID"
+      },
+      {
+        "name": "count",
+        "type": "number",
+        "required": false,
+        "description": "使用数量 1–99，默认 1"
+      }
+    ]
+  },
+  {
+    "action": "buy_pet_bath_item",
+    "write": true,
+    "url": "https://mknt.net/api/buy_pet_bath_item.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "item_id",
+        "type": "string",
+        "required": true,
+        "description": "洗护目录返回的用品 ID，使用数字字符串，例如 \"1\"；框架按商城整数类型编码"
+      },
+      {
+        "name": "count",
+        "type": "number",
+        "required": true,
+        "description": "购买数量，大于 0；不校验目录上下限或步进"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_activity_overview",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_activity_overview.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "activity",
+        "type": "string",
+        "required": true,
+        "description": "school / work / adventure"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_activity_options",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_activity_options.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "activity",
+        "type": "string",
+        "required": true,
+        "description": "school / work / adventure"
+      },
+      {
+        "name": "career_type",
+        "type": "number",
+        "required": false,
+        "description": "职业总览返回的职业类型；不传则选第一个可用职业"
+      },
+      {
+        "name": "stage",
+        "type": "number",
+        "required": false,
+        "description": "学习阶段 0–4；不传则读取总览"
+      },
+      {
+        "name": "friend_pet_id",
+        "type": "string",
+        "required": false,
+        "description": "work / adventure 可选雇佣好友宠物 ID；school 不接受"
+      }
+    ]
+  },
+  {
+    "action": "start_pet_activity",
+    "write": true,
+    "url": "https://mknt.net/api/start_pet_activity.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "activity",
+        "type": "string",
+        "required": true,
+        "description": "school / work / adventure"
+      },
+      {
+        "name": "option_name",
+        "type": "string",
+        "required": true,
+        "description": "选项目录返回的原始名称"
+      },
+      {
+        "name": "sub_event_type",
+        "type": "number",
+        "required": true,
+        "description": "目录返回的子事件类型；学习/打工须大于 0，冒险允许 0"
+      },
+      {
+        "name": "friend_uin",
+        "type": "string",
+        "required": false,
+        "description": "好友 QQ 号的十进制字符串；协议需要时显式传入"
+      },
+      {
+        "name": "friend_pet_id",
+        "type": "string",
+        "required": false,
+        "description": "好友或对手宠物 ID，由调用方保存或从目录获得"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_activity_status",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_activity_status.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      }
+    ]
+  },
+  {
+    "action": "settle_pet_activity",
+    "write": true,
+    "url": "https://mknt.net/api/settle_pet_activity.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "story_id",
+        "type": "string",
+        "required": true,
+        "description": "状态接口返回的当前任务 ID；必须与目标活动类型匹配"
+      }
+    ]
+  },
+  {
+    "action": "encourage_pet_activity",
+    "write": true,
+    "url": "https://mknt.net/api/encourage_pet_activity.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "story_id",
+        "type": "string",
+        "required": true,
+        "description": "状态接口返回的当前任务 ID；必须与目标活动类型匹配"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_fatigue_status",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_fatigue_status.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_pk_friends",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_pk_friends.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "cursor",
+        "type": "string",
+        "required": false,
+        "description": "服务端返回的下一页游标"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_pk_strangers",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_pk_strangers.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "cursor",
+        "type": "string",
+        "required": false,
+        "description": "服务端返回的下一页游标"
+      },
+      {
+        "name": "mode",
+        "type": "number",
+        "required": false,
+        "description": "非负安全整数；省略默认 4，显式传入 0 或其他值原样发送"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_interaction_messages",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_interaction_messages.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "limit",
+        "type": "number",
+        "required": false,
+        "description": "消息条数，非负安全整数，默认 20；不限制 1–50，显式传值原样发送"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_pk_power",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_pk_power.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      }
+    ]
+  },
+  {
+    "action": "poke_friend_pet",
+    "write": true,
+    "url": "https://mknt.net/api/poke_friend_pet.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "friend_uin",
+        "type": "string",
+        "required": true,
+        "description": "好友 QQ 号的十进制字符串；协议需要时显式传入"
+      }
+    ]
+  },
+  {
+    "action": "get_friend_pet_profile",
+    "write": false,
+    "url": "https://mknt.net/api/get_friend_pet_profile.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "android"
+      },
+      {
+        "name": "friend_uin",
+        "type": "string",
+        "required": true,
+        "description": "目标好友 QQ 号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": false,
+        "description": "目标好友实际返回的宠物 ID；不能用 QQ 号替代"
+      }
+    ]
+  },
+  {
+    "action": "feed_friend_pet",
+    "write": true,
+    "url": "https://mknt.net/api/feed_friend_pet.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "friend_uin",
+        "type": "string",
+        "required": true,
+        "description": "好友 QQ 号的十进制字符串；协议需要时显式传入"
+      },
+      {
+        "name": "food_id",
+        "type": "string",
+        "required": false,
+        "description": "指定食物 ID；不传或空串使用默认食物"
+      },
+      {
+        "name": "feed_type",
+        "type": "number",
+        "required": false,
+        "description": "喂食类型：0（默认）、1001、9990032、9990033、9990034"
+      }
+    ]
+  },
+  {
+    "action": "bathe_friend_pet",
+    "write": true,
+    "url": "https://mknt.net/api/bathe_friend_pet.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "item_id",
+        "type": "string",
+        "required": true,
+        "description": "洗护目录返回的用品 ID"
+      },
+      {
+        "name": "friend_uin",
+        "type": "string",
+        "required": true,
+        "description": "好友 QQ 号的十进制字符串；协议需要时显式传入"
+      },
+      {
+        "name": "count",
+        "type": "number",
+        "required": false,
+        "description": "使用数量 1–99，默认 1"
+      }
+    ]
+  },
+  {
+    "action": "visit_friend_pet",
+    "write": true,
+    "url": "https://mknt.net/api/visit_friend_pet.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "目标好友的宠物 ID，必须与 friend_uin 对应"
+      },
+      {
+        "name": "friend_uin",
+        "type": "string",
+        "required": true,
+        "description": "好友 QQ 号的十进制字符串；协议需要时显式传入"
+      }
+    ]
+  },
+  {
+    "action": "start_pet_pk",
+    "write": true,
+    "url": "https://mknt.net/api/start_pet_pk.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "friend_uin",
+        "type": "string",
+        "required": true,
+        "description": "好友 QQ 号的十进制字符串；协议需要时显式传入"
+      },
+      {
+        "name": "friend_pet_id",
+        "type": "string",
+        "required": true,
+        "description": "好友或对手宠物 ID，由调用方保存或从目录获得"
+      }
+    ]
+  },
+  {
+    "action": "get_pet_pk_status",
+    "write": false,
+    "url": "https://mknt.net/api/get_pet_pk_status.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "story_id",
+        "type": "string",
+        "required": true,
+        "description": "状态接口返回的当前任务 ID；必须与目标活动类型匹配"
+      }
+    ]
+  },
+  {
+    "action": "settle_pet_pk",
+    "write": true,
+    "url": "https://mknt.net/api/settle_pet_pk.html",
+    "fields": [
+      {
+        "name": "self_id",
+        "type": "number",
+        "required": true,
+        "description": "在线机器人 QQ 号"
+      },
+      {
+        "name": "client_type",
+        "type": "string",
+        "required": true,
+        "description": "当前实现支持 android；须使用 Android 账号"
+      },
+      {
+        "name": "pet_id",
+        "type": "string",
+        "required": true,
+        "description": "宠物 ID，须按接口说明区分本人或目标；不能用 QQ 号代替"
+      },
+      {
+        "name": "story_id",
+        "type": "string",
+        "required": true,
+        "description": "发起 PK 返回的任务 ID，必须以 6900_ 开头"
+      }
+    ]
+  }
+]

@@ -27,6 +27,8 @@ jobs:
         working-directory: backend
       - run: npm ci
         working-directory: frontend
+      - run: npm test
+        working-directory: frontend
       - run: node scripts/build-plugin.mjs
       - run: go test -tags mengka ./...
         working-directory: backend

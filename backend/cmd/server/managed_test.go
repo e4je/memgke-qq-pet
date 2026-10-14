@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,7 +17,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"qq-pet/backend/internal/database"
+	"qq-pet/backend/internal/automation"
 )
 
 func TestManagedServerProcess(t *testing.T) {
@@ -38,7 +39,7 @@ func TestManagedStartupAndRestart(t *testing.T) {
 	if err := os.WriteFile(adminFile, []byte(adminToken), 0600); err != nil {
 		t.Fatal(err)
 	}
-	var previousID float64
+
 	for cycle := 0; cycle < 2; cycle++ {
 		token := strings.Repeat(fmt.Sprint(cycle+1), 32)
 		if err := os.WriteFile(tokenFile, []byte(token), 0600); err != nil {
@@ -151,48 +152,59 @@ func TestManagedStartupAndRestart(t *testing.T) {
 			}
 			return b
 		}
-		check("/api/auth/session", "", false, "", 401)
-		check("/api/auth/session", "", true, "", 503)
+		check("/api/info", "", false, "", 401)
+		check("/api/info", "", true, "", 503)
 		check("/api/managed/control", `{"action":"activate"}`, true, "", 200)
 		check("/api/managed/control", `{"action":"activate"}`, true, "", 200)
-		check("/api/auth/session", "", true, "https://evil.example", 401)
+		check("/api/info", "", true, "https://evil.example", 401)
 		var session struct {
 			Data map[string]any `json:"data"`
 		}
-		if err := json.Unmarshal(check("/api/auth/session", "", true, "", 200), &session); err != nil {
+		if err := json.Unmarshal(check("/api/info", "", true, "", 200), &session); err != nil {
 			t.Fatal(err)
 		}
-		if session.Data["role"] != "admin" || session.Data["username"] != "framework-managed:pet-test" {
-			t.Fatalf("unexpected SSO identity: %v", session)
+		if session.Data["version"] != "2.0.0" || session.Data["api_count"] != float64(30) {
+			t.Fatalf("invalid info: %v", session)
 		}
-		id := session.Data["id"].(float64)
-		if cycle > 0 && previousID != id {
-			t.Fatal("administrator identity changed on restart")
-		}
-		previousID = id
+		check("/api/accounts", "", true, "", 200)
+		check("/api/accounts/123", "", true, "", 200)
+		check("/api/accounts/invalid", "", true, "", 400)
+		check("/api/accounts/123/resolve", `{"confirmed":false}`, true, "", 400)
+		check("/api/accounts/123/action", `{"action":"send_packet","params":{}}`, true, "", 502)
 		if b := check("/admin", "", true, "", 200); !bytes.Contains(b, []byte("<html")) {
 			t.Fatal("Vue page is missing")
 		}
 		check("/api/missing", "", true, "", 404)
 		check("/assets/missing.js", "", true, "", 404)
-		check("/api/admin/mokant/config", `{}`, true, "", 409)
+		check("/api/auth/session", "", true, "", 404)
 		check("/api/managed/control", `{"action":"stop"}`, true, "", 200)
-		check("/api/auth/session", "", true, "", 503)
+		check("/api/info", "", true, "", 503)
 		check("/api/managed/control", `{"action":"activate"}`, true, "", 200)
-		check("/api/auth/session", "", true, "", 200)
+		check("/api/info", "", true, "", 200)
 		cleanup()
 		if entries, _ := os.ReadDir(cmd.Dir); len(entries) != 0 {
 			t.Fatal("managed server wrote into program directory")
 		}
-		db, err := database.Open(filepath.Join(data, "qq-pet.db"))
+		store, err := automation.Open(filepath.Join(data, "qq-pet.db"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		var persisted string
-		err = db.QueryRow("SELECT token FROM mokant_nodes WHERE is_default=1").Scan(&persisted)
-		db.Close()
-		if err != nil || persisted != "" {
-			t.Fatalf("framework token must not persist: err=%v", err)
+		if cycle == 0 {
+			config := automation.DefaultConfig()
+			config.Start = "09:30"
+			if err = store.Configure(context.Background(), 123, config, 0); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			account, err := store.Account(context.Background(), 123)
+			if err != nil || account.Config.Start != "09:30" {
+				t.Fatal("settings lost across process restart", err)
+			}
+		}
+		store.Close()
+		content, err := os.ReadFile(filepath.Join(data, "qq-pet.db"))
+		if err != nil || bytes.Contains(content, []byte(token)) || bytes.Contains(content, []byte(adminToken)) {
+			t.Fatal("managed credentials persisted")
 		}
 	}
 }

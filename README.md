@@ -1,255 +1,84 @@
-# QQ Pet
+# QQ 宠物自动化 · 萌卡 NT 插件
 
-一个面向 QQ 宠物的 Web 管理平台。项目提供用户与钱包体系、QQ 账号接入、宠物资料与互动、自动托管、自动 PK，以及配套的后台管理能力。
+2.0.0 按 [萌卡官方 QQ 宠物 API](https://mknt.net/api/#qq-宠物) 重写，**仅支持萌卡 NT 2.6.0 及以上的插件模式、Android 账号**。账号登录、授权和插件管理入口由框架提供。
 
-本系统的 QQ 宠物接入后台框架为 [萌卡 NT（Mengka-NT）](https://mknt.net/)，通过其节点与接口提供相关能力；本仓库实现独立的 Go 管理服务和 Vue 前端，需要配置可用的萌卡 NT 服务才能使用相关功能。
+## 安装 / 升级
 
-## 导入萌卡 NT 插件（1.0.2 起）
+1. 在萌卡 NT 中登录 Android 协议账号。
+2. 选择与**萌卡运行机器**匹配的插件包：`windows-amd64`、`linux-amd64` 或 `linux-arm64`。
+3. 在萌卡插件管理中导入 ZIP，然后启用插件并打开其管理页面。不要导入 GitHub 的源码 ZIP；导入包根目录必须包含 `mengka-plugin.json` 和 `bin/qq-pet[.exe]`。
+4. 选择账号，在“自动任务”中配置并保存。首次安装和从 1.x 升级都默认关闭自动化；自动购买也默认关闭。
 
-源码 ZIP、Docker 镜像和旧版前后端双程序压缩包不能直接用于“插件导入”。萌卡 NT 2.5.4+ 要求成品包根目录有 schema 3 的 `mengka-plugin.json`，并包含当前系统可直接执行的入口。本项目新增 `websocket-v1` 托管包，单个 Go 进程内嵌网页，不依赖目标机器安装 Go 或 Node.js。
+插件 ID 保持 `memgke-qq-pet`，管理入口通过萌卡网关认证。程序只监听框架分配的回环端口，无独立登录或部署入口。不要手工配置 WebSocket 地址或令牌。
 
-1. 从本项目 Actions 的 **Build Mengka plugin** 成功运行中下载 `mengka-plugin-packages` artifact 并解压外层压缩包。
-2. 按**萌卡所在服务器**的系统和架构选择里面的 `memgke-qq-pet-1.0.2-windows-amd64.zip`、`memgke-qq-pet-1.0.2-linux-amd64.zip` 或 `memgke-qq-pet-1.0.2-linux-arm64.zip`。不要上传 artifact 外层 ZIP 或 GitHub 的 Source code ZIP。
-3. 在萌卡“插件 → 插件导入”上传对应 ZIP，确认来源与权限，启动后从卡片进入管理后台。框架管理员会自动映射为插件管理员，无需在终端输入端口或账号密码，也无需手填 WebSocket Token。
+## 功能
 
-托管模式使用框架分配的回环管理端口、每次启动的私有连接文件和持久化数据目录；令牌仅保留在进程内存中。程序连接框架后等待 `activate` 才启动自动托管和 PK，收到 `stop` 时停止任务。后台校验框架网关令牌、回环来源和管理 Origin；直接访问内部端口会返回 401。托管后台用于框架管理员访问；需要普通用户自行注册登录的公网网站请继续使用下面的独立部署方式。
+| 模块 | 自动化行为 |
+| --- | --- |
+| 日常照料 | 按饱腹 / 清洁阈值喂食、洗护，每类每日最多 12 次；使用后回读数值 |
+| 补购 | 可选购买默认食物、指定洗护用品，设每日购买请求上限；库存未知不购买，提交后回读库存 |
+| 成长计划 | 学习、工作、冒险，按实时选项目录选择可执行项目；支持阶段、职业及工作 / 冒险好友参数 |
+| 任务推进 | 保存真实 `pet_id`、`story_id`，查询完成状态后显式结算，确认活动状态更新后计数；可自动鼓励 |
+| 疲劳管理 | 学习 / 工作可在疲劳或疲劳状态未知时等待 |
+| 好友互动 | 官方宠物好友目录中的戳一戳、拜访、喂食、洗护；设每日总量与间隔，每好友同类动作每天一次 |
+| PK | 官方好友 / 陌生人目录，实时战力筛选、每日及每对手上限，已知且完成才结算；不使用硬编码名单或战力倍率 |
+| 官方操作 | 30 项宠物接口全部可查询 / 手动调用，参数来自官方文档，每项附说明链接 |
+| 记录与恢复 | 区分已提交、已核验、待核对与失败，保存每账号最近 500 条记录，面板展示最近 100 条 |
 
-数据保存于 `MENGKA_PLUGIN_DATA_DIR/qq-pet.db`，不写进安装包目录。升级时保持插件 ID 不变，并提高 `mengka-plugin.json` 的三段版本号；萌卡会拒绝同版本或降级包。旧独立部署的数据不会自动搬迁，迁移前停止两端并备份数据库及相关文件。
+调度每 30 秒检查，按北京时间统计每日配额，支持跨午夜时间段。自动写入通常至少间隔 60 秒；运行中的任务持续查询和结算。成长计划顺序执行，之后处理互动与 PK；长任务等待期间也处理照料与互动。同账号的自动和手动操作串行，多账号最多 4 个并发调度。
 
-### 自行构建导入包
+活动项目名必须使用官方目录原名；留空则选择目录首个 `can_do=true` 的选项。用品必须使用目录中的 ID，好友必须同时提供 QQ 和真实宠物 ID。自动补购不支持任意指定食物，官方购买接口只购买默认食物。
 
-安装 Go 1.26+、Node.js 22.12+ 后，在仓库根目录执行：
+## 写入结果与恢复
+
+`submitted=true` 只表示已提交，不意味着奖励、库存或金币已经变化。插件先将写入意图存入 SQLite，再调用框架；断线重连不会重放请求。
+
+- 超时、断线、写入 API 错误或不完整回执：保留待核对请求，暂停该账号后续自动写入。
+- 购买 / 照料提交后：最多 3 次成功回读未观察到库存或数值增加，就暂停，避免重复消费。
+- PK：只接受 `status_known=true` 且 `finished=true`；`999 / story detail not exist` 不算完成。结算只提交一次，之后刷新数值，不宣称奖励已核验。
+- 普通活动：只有真实任务的 `finished=true` 才提交结算；已提交后继续观察，不重复结算。
+
+遇到待核对状态，请在“宠物操作”查询官方任务 / 库存。确认结果后解除暂停；启动请求返回丢失时可填写当前官方 `story_id` 恢复跟踪。确认后自动化保持关闭，需要重新启用。不要在未确认活动结束时清除跟踪。与其他插件同时操作同一宠物会干扰结果核验。
+
+## 1.x 数据迁移与删除范围
+
+检测到旧 `qq_bindings` 表时，在框架持久数据目录先生成 `qq-pet.db.pre-v2.db` 一次性快照，再新增 `pet_v2_accounts`、`pet_v2_logs`。旧表不删除，原有用户、钱包、绑定数据仍在数据库及备份中，但不再提供相关功能入口。
+
+迁移账号、喂食开关及照料阈值；旧学习 / 工作计划、用品名称、PK 名单需要按新官方目录重新配置，自动化保持关闭。后续重启不会覆盖已保存的新版配置。
+
+已删除独立部署、Docker、独立注册登录、钱包 / 卡密 / 计费、站内公告、官方机器人推送、旧账号登录页、硬编码陌生人列表及没有对应当前宠物 API 的逻辑。数据库文件只写入框架指定的数据目录，插件更新不会向程序目录写业务数据。
+
+## 开发与构建
+
+需要 Go 1.26+、Node.js 22.12+（也支持 Node 24）。在仓库根目录执行：
 
 ```sh
-npm --prefix frontend ci
+cd frontend
+npm ci
+npm test
+npm run build
+cd ../backend
+go test ./...
+cd ..
 node scripts/build-plugin.mjs
 ```
 
-默认生成三个平台的 ZIP 和 `SHA256SUMS.txt`，位于 `dist/plugins/`。也可只构建一个平台：`node scripts/build-plugin.mjs windows-amd64`。脚本重新构建 Vue、嵌入资源并交叉编译，将描述文件置于 ZIP 根目录，Windows 自动使用 `.exe` 入口，Linux 入口保留执行权限。无需改动原独立部署配置。
+产物在 `dist/plugins/`，包含三个平台 ZIP 与 `SHA256SUMS.txt`。可用 `PLUGIN_OUTPUT_DIR` 指定输出目录，也可给脚本传单个平台名。构建脚本将 Vue 产物嵌入 Go 二进制，无需 Node 运行时。源代码直接 `go run` 不提供独立部署模式；集成测试使用模拟框架启动真实入口。
 
-开发验证：在 `backend` 下运行 `go test ./...`；构建包后还可运行 `go test -tags mengka ./...`，验证实际嵌入资源。集成测试使用模拟框架连接验证非交互启动、SSO、生命周期、令牌轮换与重启数据保留，不会操作真实 QQ 账号。
-
-> [!IMPORTANT]
-> 本项目仍在持续开发中，接口和数据结构可能发生变化。涉及 QQ 账号、Token、Cookie 等敏感信息时，请仅在可信环境中部署，并在使用前自行评估风险。
-
-## 功能概览
-
-### 用户端
-
-- 注册、登录、退出、会话恢复和密码修改
-- 独立金币钱包、转账记录、卡密兑换
-- QQ 账号添加、登录、续期和安全验证
-- 宠物资料、属性、每日统计和战力排行
-- 喂养、洗澡、互动、学习、工作和冒险
-- 好友列表、好友宠物资料和互动
-- 宠物 PK、对手缓存及自动 PK
-- 自动喂养、自动洗澡、自动互动和计划任务
-- 公告、操作状态和执行日志
-
-### 管理端
-
-- 用户、角色、状态和钱包管理
-- 注册配置、系统设置和审计日志
-- QQ 套餐、QQ 绑定与服务期限管理
-- 卡密生成、查询和统计
-- 公告与陌生宠物数据管理
-- 萌卡/机器人节点配置、连接状态和 WebSocket 调试
-- 官方机器人推送配置
-
-## 项目架构
-
-```mermaid
-flowchart LR
-    B[浏览器] -->|HTTP / WebSocket| F[Vue 3 前端]
-    F -->|REST API / 反向代理| S[Go 服务端]
-    S -->|database/sql| D[(SQLite)]
-    S -->|WebSocket / API| M[萌卡 NT 节点]
-    S -->|通知| Q[QQ 官方机器人]
-```
-
-项目采用前后端分离的单仓库结构。发布版本中的 `qq-pet-frontend` 是一个轻量 Go 启动器：它内嵌 Vue 构建产物，并将 `/api`、`/healthz` 和 `/ws` 请求反向代理到服务端。
-
-## 技术栈
-
-| 模块 | 技术 |
-| --- | --- |
-| 服务端 | Go、Chi、`database/sql` |
-| 数据库 | SQLite（`modernc.org/sqlite`，无需 CGO） |
-| 鉴权 | HttpOnly Cookie Session、bcrypt |
-| 实时通信 | Gorilla WebSocket |
-| 前端 | Vue 3、TypeScript、Vite |
-| UI 与状态 | Element Plus、Pinia、Vue Router |
-| 其他 | QRCode、UUID |
-
-## 目录结构
-
-```text
-qq-pet/
-├─ backend/
-│  ├─ cmd/server/                 # 服务端入口
-│  ├─ internal/
-│  │  ├─ admin/                   # 后台管理业务
-│  │  ├─ announcement/            # 公告业务
-│  │  ├─ auth/                    # 认证、会话与权限
-│  │  ├─ autocontrol/             # 宠物自动托管调度器
-│  │  ├─ autopk/                  # 自动 PK 调度器
-│  │  ├─ config/                  # 服务配置
-│  │  ├─ database/                # SQLite 连接与迁移
-│  │  ├─ logstream/               # 实时日志推送
-│  │  ├─ mokant/                  # 萌卡兼容节点适配层
-│  │  ├─ officialbot/             # QQ 官方机器人通知
-│  │  ├─ response/                # 统一 API 响应
-│  │  ├─ server/                  # HTTP 路由与业务接口
-│  │  ├─ timeutil/                # 时间工具
-│  │  └─ wallet/                  # 钱包与金币流水
-│  └─ data/                       # 运行时数据库（不要提交）
-├─ frontend/
-│  ├─ public/                     # 静态资源与验证页面
-│  ├─ src/
-│  │  ├─ api/                     # API 请求封装
-│  │  ├─ components/              # 公共组件
-│  │  ├─ layouts/                 # 用户端、管理端和认证布局
-│  │  ├─ router/                  # 前端路由
-│  │  ├─ stores/                  # Pinia 状态
-│  │  └─ views/                   # 用户端与管理端页面
-│  ├─ main.go                     # 静态资源服务器与反向代理
-│  ├─ package.json
-│  └─ vite.config.ts
-├─ .gitignore
-└─ README.md
-```
-
-## 环境要求
-
-- Go 1.26 或更高版本
-- Node.js 20.19+ 或 22.12+
-- npm
-
-## 从源码运行
-
-### 1. 启动服务端
-
-```powershell
+```sh
 cd backend
-go mod download
-go run ./cmd/server
+go test -tags mengka ./...  # 先执行打包脚本生成嵌入资源
 ```
 
-首次启动时，程序会依次要求输入：
+CI 执行后端测试、前端测试、三个平台构建及嵌入资源测试。测试覆盖框架认证 / 激活 / 停止 / 重启、任务恢复、明确结算、未知结果不重放、购买效果核验、旧库备份与配置冲突。测试使用模拟框架和临时数据库，不代表已经在实际 QQ 账号上验证业务效果。
 
-1. 服务端监听端口（建议填写 `2345`，与前端默认配置一致）
-2. 初始管理员用户名
-3. 初始管理员密码
+## 代码结构与接口依据
 
-配置会保存到 `backend/data/qq-pet.db`。后续启动将直接读取数据库，不再重复询问。
+- `backend/internal/managed`：萌卡托管环境、网关鉴权与生命周期。
+- `backend/internal/petapi`：WebSocket 重连、请求响应匹配和 30 项官方参数契约。
+- `backend/internal/automation`：账号配置、SQLite 日志、任务状态机、照料、互动和 PK。
+- `backend/internal/server`：仅供托管网关访问的 HTTP 管理 API 与内嵌页面。
+- `frontend/src`：Vue 管理界面，按官方契约动态呈现操作参数。
+- `scripts`：嵌入构建与保留 Linux 可执行位的 ZIP 打包。
 
-### 2. 启动前端开发服务器
-
-```powershell
-cd frontend
-npm ci
-npm run dev
-```
-
-浏览器访问 `http://127.0.0.1:5173`。
-
-当前 `frontend/vite.config.ts` 中的开发代理默认指向本机 `2345` 端口：
-
-```ts
-proxy: {
-  '/api': { target: 'http://127.0.0.1:2345', changeOrigin: true },
-  '/healthz': { target: 'http://127.0.0.1:2345', changeOrigin: true },
-  '/ws': { target: 'ws://127.0.0.1:2345', changeOrigin: true, ws: true },
-}
-```
-
-## 运行发布版
-
-请分别打开两个终端，先启动服务端，再启动前端。以下示例假设服务端端口为 `2345`：
-
-```powershell
-# 终端 1
-./qq-pet-server.exe
-
-# 终端 2
-$env:FRONTEND_PORT = "5173"
-$env:NO_OPEN = "0"
-./qq-pet-frontend.exe
-```
-
-前端启动器支持以下环境变量：
-
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `BACKEND_URL` | `http://127.0.0.1:2345` | 服务端地址 |
-| `FRONTEND_HOST` | `127.0.0.1` | 前端监听地址；如需局域网访问可显式设为 `0.0.0.0` |
-| `FRONTEND_PORT` | `5173` | 前端监听端口 |
-| `NO_OPEN` | `1` | 设为非 `1` 时尝试自动打开浏览器 |
-
-> [!NOTE]
-> SQLite 文件按服务端的当前工作目录写入 `./data/qq-pet.db`。请从固定目录启动服务端，并定期备份 `data` 目录。
-
-## 构建
-
-构建服务端：
-
-```powershell
-cd backend
-go build -trimpath -o qq-pet-server.exe ./cmd/server
-```
-
-构建前端及其启动器：
-
-```powershell
-cd frontend
-npm ci
-npm run build
-go build -trimpath -ldflags "-s -w -X main.version=1.0.1" -o qq-pet-frontend.exe .
-```
-
-交叉编译时可按目标平台设置 `GOOS` 和 `GOARCH`。SQLite 驱动不依赖 CGO。
-
-## Docker 部署
-
-Docker Compose 会启动后端 API 和前端服务，SQLite 数据保存在 `qq-pet-data` 命名卷中。先复制配置模板并修改管理员密码：
-
-```powershell
-Copy-Item .env.docker.example .env
-# 编辑 .env，至少修改 ADMIN_PASSWORD
-docker compose up -d --build
-```
-
-启动后访问 `http://localhost:5173`。后端 API 默认映射到 `http://localhost:2345`。停止服务：
-
-```powershell
-docker compose down
-```
-
-`pet-pk-strangers.txt` 位于仓库根目录，可按项目需要导入陌生人宠物数据。
-
-## 测试与检查
-
-```powershell
-cd backend
-go test ./...
-
-cd ../frontend
-npm run build
-```
-
-后端测试覆盖认证、数据库迁移、钱包、服务端接口、自动托管和自动 PK 等核心模块；前端目前以 TypeScript 类型检查和生产构建作为基础检查。
-
-
-## 致谢与项目关系
-
-本系统的 QQ 宠物后台接入基于 [萌卡 NT（Mengka-NT）](https://mknt.net/)；其[开源项目](https://github.com/Carlor-Official/Mengka-NT)提供了相关接口与节点能力。感谢原项目作者及贡献者的探索与开源分享。
-
-本仓库的管理服务和前端为独立实现，并非萌卡 NT 官方项目或官方分支。使用、修改或分发相关项目内容时，请分别遵守各自仓库的开源许可证；“QQ”等名称及相关商标归其权利人所有。
-
-## 免责声明
-
-本项目仅供学习、研究和技术交流使用，不提供任何可用性、稳定性或账号安全保证。使用者应自行承担部署和使用风险，并遵守所在地法律法规及相关平台服务协议。请勿将本项目用于破坏服务、侵犯他人权益或其他违法违规用途。
-
-## 开源许可
-
-本项目采用 [MIT License](LICENSE) 开源。你可以将本项目用于商业用途，也可以使用、复制、修改、合并、发布、分发、再许可或销售本项目的副本，但必须保留原始版权声明和许可声明。
+接口核对日期：2026-10-14。来源为 [在线 API 文档](https://mknt.net/api/#qq-宠物) 与 [官方仓库文档快照](https://github.com/Carlor-Official/Mengka-NT/tree/0acefcdb0ec2eadbe2defee7ac2e06e27e377b93/docs/api)。`contract.json` 保存接口名、字段及官方链接；管理类的 `available_actions` 不作为宠物接口能力清单。具体权限和 QQ 业务结果以运行中的萌卡框架返回为准。

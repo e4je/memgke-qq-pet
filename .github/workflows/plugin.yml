@@ -2,6 +2,13 @@ name: Build Mengka plugin
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing Release tag to rebuild/upload (vX.Y.Z or X.Y.Z); leave empty for build only'
+        required: false
+        type: string
+  release:
+    types: [published]
   pull_request:
   push:
     branches: [main]
@@ -12,8 +19,13 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.release_tag || github.ref }}
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
@@ -25,15 +37,65 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: go test ./...
         working-directory: backend
+      - run: node --test scripts/release-version.test.mjs
+      - name: Validate release version
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs'
+          import { packageVersion } from './scripts/release-version.mjs'
+          const source = JSON.parse(readFileSync('mengka-plugin.json', 'utf8'))
+          const tag = process.env.RELEASE_TAG || ''
+          const version = packageVersion(source.version, tag)
+          console.log('Package version:', version)
+          appendFileSync(process.env.GITHUB_OUTPUT, `tag=${tag}\nversion=${version}\n`)
+          NODE
       - run: npm ci
         working-directory: frontend
       - run: npm test
         working-directory: frontend
+      - run: go test scripts/package.go scripts/package_test.go
       - run: node scripts/build-plugin.mjs
+        env:
+          PLUGIN_RELEASE_TAG: ${{ steps.release.outputs.tag }}
       - run: go test -tags mengka ./...
         working-directory: backend
+      - name: Test packaged Linux binary and its release version
+        run: go test ./cmd/server -run TestManagedStartupAndRestart -count=1
+        working-directory: backend
+        env:
+          QQ_PET_TEST_BINARY: ${{ github.workspace }}/.plugin-build/linux-amd64/qq-pet
+          QQ_PET_TEST_EXPECTED_VERSION: ${{ steps.release.outputs.version }}
       - uses: actions/upload-artifact@v4
         with:
           name: mengka-plugin-packages
           path: dist/plugins/*
           if-no-files-found: error
+
+  publish:
+    needs: build
+    if: needs.build.outputs.release_tag != '' && (github.event_name == 'release' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-assets-${{ needs.build.outputs.release_tag }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: mengka-plugin-packages
+          path: packages
+      - name: Upload verified packages to the existing Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json tagName,isDraft
+          cd packages
+          sha256sum --check SHA256SUMS.txt
+          gh release upload "$RELEASE_TAG" ./*.zip SHA256SUMS.txt --repo "$GH_REPO" --clobber

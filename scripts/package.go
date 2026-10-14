@@ -50,7 +50,7 @@ func pack(root, output string) error {
 		header.Name = filepath.ToSlash(rel)
 		header.Method = zip.Deflate
 		header.SetMode(0644)
-		if strings.HasPrefix(header.Name, "bin/") {
+		if strings.HasPrefix(header.Name, "bin/") || header.Name == "qq-pet" || header.Name == "qq-pet.exe" {
 			header.SetMode(0755)
 		}
 		dest, err := w.CreateHeader(header)

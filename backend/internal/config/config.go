@@ -1,7 +1,7 @@
 package config
 
 // Values other than the build version come exclusively from the managed runtime.
-var buildVersion = "2.0.0"
+var buildVersion = "2.0.1"
 
 type Config struct {
 	ManagedConnection *ManagedConnection `json:"-"`

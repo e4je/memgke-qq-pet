@@ -235,7 +235,7 @@ onUnmounted(() => {
         <span class="status-dot" :class="{ online: info?.connected }"></span
         >{{ info?.connected ? "框架已连接" : "等待框架连接"
         }}<small
-          >仅通过萌卡 NT 管理入口访问<br />v{{ info?.version || "2.0.0" }} ·
+          >仅通过萌卡 NT 管理入口访问<br />v{{ info?.version || "2.0.1" }} ·
           {{ info?.api_count || 30 }} 项官方接口</small
         >
       </div>

@@ -3,8 +3,11 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { packageVersion } from './release-version.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const template = JSON.parse(readFileSync(join(root, 'mengka-plugin.json'), 'utf8'))
+template.version = packageVersion(template.version, process.env.PLUGIN_RELEASE_TAG || '')
 const targets = process.argv.slice(2)
 if (!targets.length) targets.push('windows-amd64', 'linux-amd64', 'linux-arm64')
 for (const target of targets) {
@@ -21,7 +24,6 @@ run(process.execPath, ['node_modules/vite/bin/vite.js', 'build'], frontend)
 const embedded = join(root, 'backend/internal/server/plugin-dist')
 rmSync(embedded, { recursive: true, force: true })
 cpSync(join(frontend, 'dist'), embedded, { recursive: true })
-const template = JSON.parse(readFileSync(join(root, 'mengka-plugin.json'), 'utf8'))
 const output = resolve(process.env.PLUGIN_OUTPUT_DIR || join(root, 'dist/plugins'))
 mkdirSync(output, { recursive: true })
 const checksums = []

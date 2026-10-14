@@ -163,7 +163,7 @@ func TestManagedStartupAndRestart(t *testing.T) {
 		if err := json.Unmarshal(check("/api/info", "", true, "", 200), &session); err != nil {
 			t.Fatal(err)
 		}
-		if session.Data["version"] != "2.0.0" || session.Data["api_count"] != float64(30) {
+		if session.Data["version"] != "2.0.1" || session.Data["api_count"] != float64(30) {
 			t.Fatalf("invalid info: %v", session)
 		}
 		check("/api/accounts", "", true, "", 200)

@@ -29,8 +29,10 @@ for (const target of targets) {
   const [goos, goarch] = target.split('-')
   const stage = join(root, '.plugin-build', target)
   rmSync(stage, { recursive: true, force: true })
-  mkdirSync(join(stage, 'bin'), { recursive: true })
-  const entry = `bin/qq-pet${goos === 'windows' ? '.exe' : ''}`
+  mkdirSync(stage, { recursive: true })
+  // A root-level entry has identical spelling before and after Windows path
+  // normalization. Omit unused optional arrays in the source manifest.
+  const entry = `qq-pet${goos === 'windows' ? '.exe' : ''}`
   const manifest = { ...template, runtime: { ...template.runtime, entry } }
   writeFileSync(join(stage, 'mengka-plugin.json'), JSON.stringify(manifest, null, 2) + '\n')
   for (const file of ['LICENSE']) {

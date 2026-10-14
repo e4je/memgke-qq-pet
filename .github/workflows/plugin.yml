@@ -29,6 +29,7 @@ jobs:
         working-directory: frontend
       - run: npm test
         working-directory: frontend
+      - run: go test scripts/package.go scripts/package_test.go
       - run: node scripts/build-plugin.mjs
       - run: go test -tags mengka ./...
         working-directory: backend

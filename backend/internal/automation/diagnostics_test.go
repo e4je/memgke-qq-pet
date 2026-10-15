@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"qq-pet/backend/internal/petapi"
 	"strings"
 	"testing"
 	"time"
@@ -217,5 +218,98 @@ func TestExistingLogTableIsUpgradedWithoutLosingRows(t *testing.T) {
 	logs, err = s.Logs(context.Background(), 123)
 	if err != nil || len(logs) != 2 || logs[0].Meta.RunID != "new-trace" {
 		t.Fatal("metadata migration failed", err)
+	}
+}
+
+func TestExternalFinishedActivityRecoversAndDoesNotSettleAgain(t *testing.T) {
+	for _, uncertain := range []bool{false, true} {
+		t.Run(map[bool]string{false: "submitted", true: "unknown"}[uncertain], func(t *testing.T) {
+			f := &fakeAPI{handler: func(action string, p map[string]any) (json.RawMessage, error) {
+				switch action {
+				case "get_pet_activity_status":
+					return json.RawMessage(`{"story_id":"6100_old","finished":true,"state_code":0,"remaining_seconds":0}`), nil
+				case "settle_pet_activity":
+					if uncertain {
+						return nil, &petapi.UnknownOutcome{Cause: context.DeadlineExceeded}
+					}
+					return json.RawMessage(`{"submitted":true,"effect_verified":false}`), nil
+				case "get_pet_activity_options":
+					return json.RawMessage(`{"options":[{"name":"course","sub_event_type":6115007,"can_do":true}]}`), nil
+				case "start_pet_activity":
+					return json.RawMessage(`{"submitted":true,"story_id":"6100_new"}`), nil
+				}
+				if b, ok := basic(action); ok {
+					return b, nil
+				}
+				return nil, errors.New(action)
+			}}
+			e, s := setup(t, f)
+			ctx := context.Background()
+			a, _ := s.Account(ctx, 123)
+			stage := 1
+			a.Config.Plans = []Plan{{ID: "p1", Activity: "school", Option: "course", Count: 8, Stage: &stage}}
+			if err := e.Configure(ctx, 123, a.Config, a.Revision); err != nil {
+				t.Fatal(err)
+			}
+			_ = e.Tick(ctx, 123)
+			for i := 0; i < 3; i++ {
+				a, _ = s.Account(ctx, 123)
+				a.State.LastWrite = ""
+				if err := s.Save(ctx, 123, a.State, nil); err != nil {
+					t.Fatal(err)
+				}
+				e = New(f, s)
+				_ = e.Tick(ctx, 123)
+				if f.count("start_pet_activity") > 0 {
+					break
+				}
+			}
+			if f.count("settle_pet_activity") != 1 {
+				t.Fatal("settlement replayed or missing")
+			}
+			a, _ = s.Account(ctx, 123)
+			if uncertain {
+				if a.State.Pending == nil || f.count("start_pet_activity") != 0 {
+					t.Fatal("uncertain settlement must pause")
+				}
+			} else {
+				if f.count("start_pet_activity") != 1 || a.State.Counts["plan:p1"] != 0 || a.State.SettledStoryID != "6100_old" {
+					t.Fatalf("did not recover safely: %+v", a.State)
+				}
+			}
+			logs, _ := s.Logs(ctx, 123)
+			found := false
+			for _, l := range logs {
+				if l.Action == "tick" && l.Status == "start" && strings.Contains(string(l.Data), `"option":"course"`) && strings.Contains(string(l.Data), `"state_before"`) {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatal("missing full configuration and state snapshot")
+			}
+		})
+	}
+}
+
+func TestExternalUnfinishedActivityNeverSettled(t *testing.T) {
+	f := &fakeAPI{handler: func(action string, p map[string]any) (json.RawMessage, error) {
+		if action == "get_pet_activity_status" {
+			return json.RawMessage(`{"story_id":"6100_running","finished":false,"remaining_seconds":10}`), nil
+		}
+		if b, ok := basic(action); ok {
+			return b, nil
+		}
+		return nil, errors.New(action)
+	}}
+	e, s := setup(t, f)
+	ctx := context.Background()
+	a, _ := s.Account(ctx, 123)
+	a.Config.Plans = []Plan{{ID: "p", Activity: "work", Count: 1}}
+	_ = e.Configure(ctx, 123, a.Config, a.Revision)
+	if err := e.Tick(ctx, 123); err != nil {
+		t.Fatal(err)
+	}
+	if f.count("settle_pet_activity") != 0 || f.count("start_pet_activity") != 0 {
+		t.Fatal("interfered with running activity")
 	}
 }

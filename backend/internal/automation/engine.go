@@ -364,9 +364,9 @@ func (e *Engine) Tick(ctx context.Context, id int64) error {
 		e.event(ctx, id, "tick", "error", "读取账号状态失败："+err.Error(), nil)
 		return err
 	}
-	e.event(ctx, id, "tick", "start", "开始检查自动任务", map[string]any{"enabled": a.Config.Enabled, "revision": a.Revision, "plan_count": len(a.Config.Plans), "auto_feed": a.Config.Care.Feed, "auto_bathe": a.Config.Care.Bathe})
+	e.event(ctx, id, "tick", "start", "开始检查自动任务", map[string]any{"config": a.Config, "revision": a.Revision, "state_before": a.State, "local_time": now().Format(time.RFC3339)})
 	defer func() {
-		e.event(ctx, id, "tick", "complete", a.State.Message, map[string]any{"last_error": a.State.LastError, "next_run": a.State.NextRun, "counts": a.State.Counts, "task": a.State.Task, "pending": a.State.Pending, "verify": a.State.Verify})
+		e.event(ctx, id, "tick", "complete", a.State.Message, map[string]any{"revision": a.Revision, "state_after": a.State})
 	}()
 	if !a.Config.Enabled {
 		e.decision(ctx, &a, "tick", "自动任务总开关未启用，本轮不会自动操作", nil)
@@ -498,8 +498,22 @@ func (e *Engine) step(ctx context.Context, a *Account) error {
 		return errors.New("活动状态缺少 finished，无法确认空闲")
 	}
 	if activity.StoryID != "" {
-		e.decision(ctx, a, "activity", "检测到未由本插件发起的活动，请核对后结算", activity)
-		return nil
+		if !*activity.Finished {
+			e.decision(ctx, a, "activity", "已有活动尚未结束，暂缓成长计划", activity)
+			_, err := e.social(ctx, a)
+			return err
+		}
+		if s.SettledStoryID != activity.StoryID || s.SettledPetID != own.PetID {
+			if len(c.Plans) == 0 {
+				e.decision(ctx, a, "activity", "已有活动完成，但未配置成长计划，不自动接管", activity)
+				_, err := e.social(ctx, a)
+				return err
+			}
+			s.Task = &Task{Kind: "external", PetID: own.PetID, StoryID: activity.StoryID}
+			e.event(ctx, id, "activity", "info", "接管已完成活动；结算一次，不计入当前成长计划次数", activity)
+			return e.advance(ctx, a)
+		}
+		e.event(ctx, id, "activity", "info", "已完成活动有持久化结算提交记录，允许检查下一项计划；不重复结算，奖励尚未核实", activity)
 	}
 	for _, plan := range c.Plans {
 		if s.Counts["plan:"+plan.ID] >= plan.Count {
@@ -573,6 +587,7 @@ func (e *Engine) step(ctx context.Context, a *Account) error {
 				params["friend_uin"] = plan.FriendUIN
 				params["friend_pet_id"] = plan.FriendPetID
 			}
+			e.event(ctx, id, "plan", "info", "已选中可执行成长项目", map[string]any{"plan": plan, "option": option, "completed": s.Counts["plan:"+plan.ID], "params": params})
 			_, err = e.write(ctx, id, s, "start_pet_activity", params, func(b json.RawMessage) error {
 				var result struct {
 					StoryID string `json:"story_id"`
@@ -629,15 +644,19 @@ func (e *Engine) advance(ctx context.Context, a *Account) error {
 	if status.Finished == nil {
 		return errors.New("状态缺少 finished，不能推断任务完成")
 	}
-	if t.Kind != "pk" && status.StoryID != t.StoryID {
-		if t.Settling {
-			if t.PlanID != "" {
-				s.Counts["plan:"+t.PlanID]++
-			}
-			s.Task = nil
-			s.Message = "活动结算后状态已更新"
-			return nil
+	e.event(ctx, a.SelfID, "activity", "info", "核对跟踪任务与官方状态", map[string]any{"task": t, "official_status": status})
+	if t.Kind != "pk" && t.Settling && (status.StoryID != t.StoryID || *status.Finished) {
+		// A successful submission is durable evidence against replay, not proof of rewards.
+		s.SettledPetID, s.SettledStoryID = t.PetID, t.StoryID
+		if t.PlanID != "" {
+			s.Counts["plan:"+t.PlanID]++
 		}
+		s.Task = nil
+		s.Message = "活动结算已提交且活动已结束，继续后续计划；奖励以官方结果为准"
+		e.event(ctx, a.SelfID, "activity", "info", s.Message, map[string]any{"task": t, "official_status": status, "reward_verified": false})
+		return nil
+	}
+	if t.Kind != "pk" && status.StoryID != t.StoryID {
 		s.Pending = &Pending{Action: "reconcile_activity", At: now().Format(time.RFC3339), Reason: "当前任务与已跟踪 story_id 不一致，不能认定已完成"}
 		return errors.New(s.Pending.Reason)
 	}

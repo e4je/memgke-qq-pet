@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { labels, parameters, request } from "./api";
-import type { Account, Bot, Config, Info, Log } from "./types";
+import type { Account, Bot, Config, Info } from "./types";
 import AutomationForm from "./AutomationForm.vue";
+import LogsPanel from "./LogsPanel.vue";
 const info = ref<Info>(),
   bots = ref<Bot[]>([]),
   selected = ref(0),
   account = ref<Account>(),
   draft = ref<Config>(),
-  logs = ref<Log[]>([]);
+  logRefresh = ref(0);
 const tab = ref("overview"),
   error = ref(""),
   notice = ref(""),
@@ -45,13 +46,6 @@ const fields = computed(
     ) || [],
 );
 const count = (key: string) => account.value?.state.counts?.[key] || 0;
-const statusLabels: Record<string, string> = {
-  submitted: "已提交",
-  verified: "已核验",
-  unknown: "待核对",
-  error: "失败",
-  confirmed: "人工确认",
-};
 let timer: ReturnType<typeof setInterval> | undefined;
 async function attempt(fn: () => Promise<void>) {
   if (busy.value) return;
@@ -108,8 +102,7 @@ async function refreshProfile() {
     });
 }
 async function loadLogs() {
-  if (selected.value)
-    logs.value = await request(`/api/accounts/${selected.value}/logs`);
+  logRefresh.value++;
 }
 async function save() {
   if (!draft.value) return;
@@ -119,7 +112,7 @@ async function save() {
   });
   dirty.value = false;
   await state();
-  notice.value = "配置已保存；下一轮调度自动应用。";
+  notice.value = "配置已保存，调度会立即重新检查；请确认账号总开关已启用。";
 }
 function chooseAction(name: string) {
   action.value = name;
@@ -173,9 +166,12 @@ async function resolve(clearTask: boolean) {
   notice.value = "已解除暂停。请核对配置后重新启用。";
 }
 async function runOnce() {
-  await request(`/api/accounts/${selected.value}/run`, "POST");
-  await state();
-  await loadLogs();
+  try {
+    await request(`/api/accounts/${selected.value}/run`, "POST");
+  } finally {
+    await state();
+    await loadLogs();
+  }
 }
 async function refresh() {
   info.value = await request("/api/info");
@@ -235,7 +231,7 @@ onUnmounted(() => {
         <span class="status-dot" :class="{ online: info?.connected }"></span
         >{{ info?.connected ? "框架已连接" : "等待框架连接"
         }}<small
-          >仅通过萌卡 NT 管理入口访问<br />v{{ info?.version || "2.0.1" }} ·
+          >仅通过萌卡 NT 管理入口访问<br />v{{ info?.version || "2.0.3" }} ·
           {{ info?.api_count || 30 }} 项官方接口</small
         >
       </div>
@@ -279,7 +275,18 @@ onUnmounted(() => {
         <p>宠物仅支持 Android 协议，账号与登录由萌卡管理。</p>
         <button @click="attempt(refresh)">刷新账号</button>
       </div>
-      <template v-else-if="account && draft">
+      <template v-else-if="account && draft"
+        ><div class="alert scheduler-status" v-if="info?.scheduler">
+          <strong>{{
+            info.scheduler.running ? "调度运行中" : "调度未启动"
+          }}</strong>
+          · 最近巡检：{{ info.scheduler.last_cycle || "尚无记录" }} · 已启用
+          {{ info.scheduler.enabled_accounts }} 个账号<span
+            v-if="info.scheduler.last_error"
+          >
+            · {{ info.scheduler.last_error }}</span
+          >
+        </div>
         <div v-if="!available" class="alert">
           账号不在线，自动任务会等待恢复；配置和历史仍可查看。
         </div>
@@ -419,6 +426,8 @@ onUnmounted(() => {
         </template>
         <AutomationForm
           v-if="tab === 'automation'"
+          :account="selected"
+          :pet="profile.pet_id ? String(profile.pet_id) : undefined"
           :config="draft"
           :busy="busy"
           :dirty="dirty"
@@ -426,7 +435,6 @@ onUnmounted(() => {
           @edit="dirty = true"
           @save="attempt(save)"
           @run="attempt(runOnce)"
-          @catalog="chooseAction"
         />
         <template v-if="tab === 'console'"
           ><section class="card">
@@ -491,32 +499,11 @@ onUnmounted(() => {
             <pre>{{ JSON.stringify(result, null, 2) }}</pre>
           </section></template
         >
-        <section v-if="tab === 'logs'" class="card">
-          <div class="card-head">
-            <div>
-              <h2>最近运行记录</h2>
-              <p class="muted">
-                区分已提交、已核验、结果未知和失败；每账号保留最近 500 条。
-              </p>
-            </div>
-            <button :disabled="busy" @click="attempt(loadLogs)">刷新</button>
-          </div>
-          <div v-if="!logs.length" class="empty compact">还没有操作记录。</div>
-          <article v-for="log in logs" :key="log.id" class="log-row">
-            <div>
-              <span class="pill" :class="log.status">{{
-                statusLabels[log.status] || log.status
-              }}</span
-              ><strong>{{ labels[log.action] || log.action }}</strong
-              ><time>{{ log.at }}</time>
-            </div>
-            <p>{{ log.message }}</p>
-            <details v-if="log.data">
-              <summary>查看官方返回</summary>
-              <pre>{{ JSON.stringify(log.data, null, 2) }}</pre>
-            </details>
-          </article>
-        </section>
+        <LogsPanel
+          v-if="tab === 'logs'"
+          :account="selected"
+          :refresh="logRefresh"
+        />
       </template>
       <footer class="page-footer">
         QQ 宠物自动化 · 萌卡 NT 插件 <span>官方 API · Android 协议</span>

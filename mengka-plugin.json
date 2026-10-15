@@ -2,11 +2,11 @@
   "schema": 3,
   "plugin_id": "memgke-qq-pet",
   "name": "QQ 宠物自动化",
-  "version": "2.0.1",
+  "version": "2.0.4",
   "min_framework": "2.6.0",
   "author": "e4je",
   "description": "QQ 宠物管理、自动托管和自动 PK。",
-  "notes": "启动程序改为包根目录，省略未使用的空参数和事件列表；用户已确认 Windows 包可在萌卡 NT 2.6.0 中启动。发布流程按 Release 标签同步包内版本和程序版本，并自动上传三个平台的成品 ZIP 与校验文件。业务数据和插件 ID 保持不变。",
+  "notes": "修复已完成的外部活动阻塞成长计划；持久保存结算提交记录，重启不重复结算。每轮日志记录完整当前配置、配置版本、前后状态及活动决策，便于诊断。",
   "runtime": {
     "entry": "qq-pet",
     "transport": "websocket-v1",

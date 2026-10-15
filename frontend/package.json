@@ -1,7 +1,7 @@
 {
   "name": "mengka-qq-pet-plugin",
   "private": true,
-  "version": "2.0.1",
+  "version": "2.0.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,8 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "6.0.10",
+    "@vue/test-utils": "^2.5.1",
+    "happy-dom": "^21.0.1",
     "typescript": "~5.9.3",
     "vite": "8.3.4",
     "vitest": "5.0.4",

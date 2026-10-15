@@ -141,20 +141,22 @@ type Pending struct {
 	Reason string         `json:"reason"`
 }
 type State struct {
-	Date       string          `json:"date"`
-	Message    string          `json:"message"`
-	LastError  string          `json:"last_error"`
-	UpdatedAt  string          `json:"updated_at"`
-	Profile    json.RawMessage `json:"profile,omitempty"`
-	Vitals     json.RawMessage `json:"vitals,omitempty"`
-	Counts     map[string]int  `json:"counts"`
-	LastSocial string          `json:"last_social"`
-	LastWrite  string          `json:"last_write"`
-	Task       *Task           `json:"task,omitempty"`
-	Pending    *Pending        `json:"pending,omitempty"`
-	Failures   int             `json:"failures"`
-	NextRun    string          `json:"next_run,omitempty"`
-	Verify     *Verification   `json:"verify,omitempty"`
+	SettledPetID   string          `json:"settled_pet_id,omitempty"`
+	SettledStoryID string          `json:"settled_story_id,omitempty"`
+	Date           string          `json:"date"`
+	Message        string          `json:"message"`
+	LastError      string          `json:"last_error"`
+	UpdatedAt      string          `json:"updated_at"`
+	Profile        json.RawMessage `json:"profile,omitempty"`
+	Vitals         json.RawMessage `json:"vitals,omitempty"`
+	Counts         map[string]int  `json:"counts"`
+	LastSocial     string          `json:"last_social"`
+	LastWrite      string          `json:"last_write"`
+	Task           *Task           `json:"task,omitempty"`
+	Pending        *Pending        `json:"pending,omitempty"`
+	Failures       int             `json:"failures"`
+	NextRun        string          `json:"next_run,omitempty"`
+	Verify         *Verification   `json:"verify,omitempty"`
 }
 type Verification struct {
 	Action   string  `json:"action"`
@@ -177,6 +179,7 @@ type Log struct {
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data,omitempty"`
 	At      string          `json:"at"`
+	Meta    LogMeta         `json:"meta"`
 }
 
 func decode[T any](b []byte) (T, error) {

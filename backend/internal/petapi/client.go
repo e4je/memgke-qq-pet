@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"sync"
@@ -69,7 +70,11 @@ func (c *Client) Run(ctx context.Context) {
 	delay := time.Second
 	for ctx.Err() == nil {
 		started := time.Now()
-		_ = c.connect(ctx)
+		err := c.connect(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		slog.Warn("萌卡连接中断，等待重连", "error", err, "retry_seconds", delay.Seconds())
 		if time.Since(started) > time.Minute {
 			delay = time.Second
 		}
@@ -102,6 +107,7 @@ func (c *Client) connect(ctx context.Context) error {
 	if auth.Type != "auth_ok" {
 		return errors.New("框架认证失败")
 	}
+	slog.Info("萌卡 WebSocket 认证成功")
 	_ = ws.SetReadDeadline(time.Now().Add(65 * time.Second))
 	current := &connection{ws: ws, done: make(chan struct{})}
 	c.mu.Lock()

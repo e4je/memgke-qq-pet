@@ -80,12 +80,25 @@ export interface Spec {
   fields: Field[];
 }
 export interface Info {
+  scheduler?: {
+    running: boolean;
+    last_cycle: string;
+    enabled_accounts: number;
+    last_error: string;
+  };
   version: string;
   connected: boolean;
   api_count: number;
   actions: Spec[];
 }
 export interface Log {
+  meta?: {
+    run_id: string;
+    source: string;
+    duration_ms?: number;
+    params?: Record<string, unknown>;
+    error_code?: unknown;
+  };
   id: number;
   action: string;
   status: string;

@@ -45,6 +45,33 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return fail(err)
 	}
+	cols, err := db.Query("PRAGMA table_info(pet_v2_logs)")
+	if err != nil {
+		return fail(err)
+	}
+	hasMeta := false
+	for cols.Next() {
+		var cid, notnull, pk int
+		var name, kind string
+		var def any
+		if err = cols.Scan(&cid, &name, &kind, &notnull, &def, &pk); err != nil {
+			cols.Close()
+			return fail(err)
+		}
+		if name == "metadata" {
+			hasMeta = true
+		}
+	}
+	err = cols.Err()
+	cols.Close()
+	if err != nil {
+		return fail(err)
+	}
+	if !hasMeta {
+		if _, err = db.Exec("ALTER TABLE pet_v2_logs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'"); err != nil {
+			return fail(err)
+		}
+	}
 	s := &Store{db}
 	if legacy > 0 {
 		if err = s.importLegacy(); err != nil {
@@ -117,15 +144,16 @@ func (s *Store) Save(ctx context.Context, id int64, state State, entry *Log) err
 		return err
 	}
 	if entry != nil {
-		data := string(entry.Data)
+		data := string(safeData(entry.Data))
 		if data == "" {
 			data = "null"
 		}
-		_, err = tx.ExecContext(ctx, "INSERT INTO pet_v2_logs(self_id,action,status,message,data,at) VALUES(?,?,?,?,?,?)", id, entry.Action, entry.Status, entry.Message, data, state.UpdatedAt)
+		meta, _ := json.Marshal(entry.Meta)
+		_, err = tx.ExecContext(ctx, "INSERT INTO pet_v2_logs(self_id,action,status,message,data,at,metadata) VALUES(?,?,?,?,?,?,?)", id, entry.Action, entry.Status, entry.Message, data, state.UpdatedAt, string(meta))
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, "DELETE FROM pet_v2_logs WHERE self_id=? AND id NOT IN (SELECT id FROM pet_v2_logs WHERE self_id=? ORDER BY id DESC LIMIT 500)", id, id)
+		_, err = tx.ExecContext(ctx, "DELETE FROM pet_v2_logs WHERE self_id=? AND (at<? OR id < COALESCE((SELECT id FROM pet_v2_logs WHERE self_id=? ORDER BY id DESC LIMIT 1 OFFSET 49999),0))", id, now().AddDate(0, 0, -7).Format("2006-01-02T15:04:05Z07:00"), id)
 		if err != nil {
 			return err
 		}
@@ -149,7 +177,43 @@ func (s *Store) Enabled(ctx context.Context) ([]int64, error) {
 	return ids, rows.Err()
 }
 func (s *Store) Logs(ctx context.Context, id int64) ([]Log, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT id,self_id,action,status,message,data,at FROM pet_v2_logs WHERE self_id=? ORDER BY id DESC LIMIT 100", id)
+	return s.QueryLogs(ctx, id, LogQuery{Limit: 200})
+}
+
+type LogQuery struct {
+	Before                int64
+	Limit                 int
+	Status, Action, RunID string
+}
+
+func (s *Store) QueryLogs(ctx context.Context, id int64, q LogQuery) ([]Log, error) {
+	if q.Limit <= 0 {
+		q.Limit = 200
+	}
+	if q.Limit > 5000 {
+		q.Limit = 5000
+	}
+	sql := "SELECT id,self_id,action,status,message,data,at,metadata FROM pet_v2_logs WHERE self_id=?"
+	args := []any{id}
+	if q.Before > 0 {
+		sql += " AND id<?"
+		args = append(args, q.Before)
+	}
+	if q.Status != "" {
+		sql += " AND status=?"
+		args = append(args, q.Status)
+	}
+	if q.Action != "" {
+		sql += " AND action=?"
+		args = append(args, q.Action)
+	}
+	if q.RunID != "" {
+		sql += " AND json_extract(metadata,'$.run_id')=?"
+		args = append(args, q.RunID)
+	}
+	sql += " ORDER BY id DESC LIMIT ?"
+	args = append(args, q.Limit)
+	rows, err := s.DB.QueryContext(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -157,14 +221,31 @@ func (s *Store) Logs(ctx context.Context, id int64) ([]Log, error) {
 	out := []Log{}
 	for rows.Next() {
 		var l Log
-		var data string
-		if err = rows.Scan(&l.ID, &l.SelfID, &l.Action, &l.Status, &l.Message, &data, &l.At); err != nil {
+		var data, meta string
+		if err = rows.Scan(&l.ID, &l.SelfID, &l.Action, &l.Status, &l.Message, &data, &l.At, &meta); err != nil {
 			return nil, err
 		}
 		l.Data = json.RawMessage(data)
+		_ = json.Unmarshal([]byte(meta), &l.Meta)
 		out = append(out, l)
 	}
 	return out, rows.Err()
+}
+func (s *Store) AppendLog(ctx context.Context, id int64, l Log) error {
+	if id <= 0 {
+		return nil
+	}
+	l.Data = safeData(l.Data)
+	data := string(l.Data)
+	if data == "" {
+		data = "null"
+	}
+	meta, _ := json.Marshal(l.Meta)
+	_, err := s.DB.ExecContext(ctx, "INSERT INTO pet_v2_logs(self_id,action,status,message,data,at,metadata) VALUES(?,?,?,?,?,?,?)", id, l.Action, l.Status, l.Message, data, now().Format("2006-01-02T15:04:05.000Z07:00"), string(meta))
+	if err == nil && l.Action == "tick" && l.Status == "complete" {
+		_, err = s.DB.ExecContext(ctx, "DELETE FROM pet_v2_logs WHERE self_id=? AND (at<? OR id < COALESCE((SELECT id FROM pet_v2_logs WHERE self_id=? ORDER BY id DESC LIMIT 1 OFFSET 49999),0))", id, now().AddDate(0, 0, -7).Format("2006-01-02T15:04:05Z07:00"), id)
+	}
+	return err
 }
 
 // Legacy rows remain untouched. Import only settings backed by current APIs,

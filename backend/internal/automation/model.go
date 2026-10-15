@@ -177,6 +177,7 @@ type Log struct {
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data,omitempty"`
 	At      string          `json:"at"`
+	Meta    LogMeta         `json:"meta"`
 }
 
 func decode[T any](b []byte) (T, error) {

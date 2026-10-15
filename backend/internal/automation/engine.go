@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"qq-pet/backend/internal/petapi"
 	"strconv"
 	"strings"
@@ -19,9 +20,14 @@ type Engine struct {
 	lifecycle sync.Mutex
 	cancel    context.CancelFunc
 	done      chan struct{}
+	wake      chan struct{}
+	stats     sync.Mutex
+	scheduler SchedulerStatus
 }
 
-func New(api petapi.API, store *Store) *Engine { return &Engine{API: api, Store: store} }
+func New(api petapi.API, store *Store) *Engine {
+	return &Engine{API: api, Store: store, wake: make(chan struct{}, 1)}
+}
 func (e *Engine) lock(id int64) func() {
 	v, _ := e.locks.LoadOrStore(id, &sync.Mutex{})
 	m := v.(*sync.Mutex)
@@ -37,6 +43,10 @@ func (e *Engine) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	e.done = make(chan struct{})
+	e.stats.Lock()
+	e.scheduler.Running = true
+	e.stats.Unlock()
+	slog.Info("自动化调度已启动", "interval_seconds", 30)
 	go func() {
 		defer close(e.done)
 		ticker := time.NewTicker(30 * time.Second)
@@ -47,6 +57,7 @@ func (e *Engine) Start() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+			case <-e.wake:
 			}
 		}
 	}()
@@ -58,11 +69,24 @@ func (e *Engine) Stop() {
 		e.cancel()
 		<-e.done
 		e.cancel = nil
+		e.stats.Lock()
+		e.scheduler.Running = false
+		e.stats.Unlock()
+		slog.Info("自动化调度已停止")
 	}
 }
 func (e *Engine) cycle(ctx context.Context) {
 	ids, err := e.Store.Enabled(ctx)
+	e.stats.Lock()
+	e.scheduler.LastCycle = now().Format(time.RFC3339)
+	e.scheduler.EnabledAccounts = len(ids)
+	e.scheduler.LastError = ""
 	if err != nil {
+		e.scheduler.LastError = err.Error()
+	}
+	e.stats.Unlock()
+	if err != nil {
+		slog.Error("读取自动化账号失败", "error", err)
 		return
 	}
 	slots := make(chan struct{}, 4)
@@ -83,7 +107,9 @@ func (e *Engine) cycle(ctx context.Context) {
 			defer func() { <-slots }()
 			task, cancel := context.WithTimeout(ctx, 25*time.Second)
 			defer cancel()
-			_ = e.Tick(task, id)
+			if err := e.Tick(task, id); err != nil {
+				slog.Error("账号自动检查失败", "self_id", id, "error", err)
+			}
 		}(id)
 	}
 	wg.Wait()
@@ -98,7 +124,8 @@ type Bot struct {
 }
 
 func (e *Engine) Bots(ctx context.Context) ([]Bot, error) {
-	b, err := e.API.Call(ctx, "get_bot_list", map[string]any{})
+	t, _ := ctx.Value(traceKey{}).(trace)
+	b, err := e.call(ctx, t.Account, "get_bot_list", map[string]any{})
 	if err != nil {
 		return nil, err
 	}
@@ -120,12 +147,35 @@ func (e *Engine) online(ctx context.Context, id int64) error {
 	return errors.New("框架中没有此 Android 账号；宠物接口不支持 Linux 协议")
 }
 func (e *Engine) read(ctx context.Context, id int64, action string, params map[string]any) (json.RawMessage, error) {
-	return petapi.Invoke(ctx, e.API, id, action, params)
+	p, err := petapi.Prepare(id, action, params)
+	if err != nil {
+		return nil, err
+	}
+	return e.call(ctx, id, action, p)
 }
 func (e *Engine) Configure(ctx context.Context, id int64, c Config, revision int) error {
 	unlock := e.lock(id)
 	defer unlock()
-	return e.Store.Configure(ctx, id, c, revision)
+	ctx = traced(ctx, id, "config")
+	if err := e.Store.Configure(ctx, id, c, revision); err != nil {
+		e.event(ctx, id, "configure", "error", err.Error(), nil)
+		return err
+	}
+	a, err := e.Store.Account(ctx, id)
+	if err != nil {
+		return err
+	}
+	a.State.NextRun = ""
+	a.State.Failures = 0
+	if err = e.persist(id, a.State, nil); err != nil {
+		return err
+	}
+	e.event(ctx, id, "configure", "info", "配置已保存，将立即重新检查；待核对的写入保持暂停", map[string]any{"revision": revision + 1, "config": c})
+	select {
+	case e.wake <- struct{}{}:
+	default:
+	}
+	return nil
 }
 
 // persist uses a fresh bounded context even after a request timeout so an
@@ -147,7 +197,7 @@ func (e *Engine) write(ctx context.Context, id int64, s *State, action string, p
 	if err = e.persist(id, *s, nil); err != nil {
 		return nil, err
 	}
-	data, err := e.API.Call(ctx, action, params)
+	data, err := e.call(ctx, id, action, params)
 	if err != nil {
 		var unknown *petapi.UnknownOutcome
 		var rpc *petapi.RPCError
@@ -201,17 +251,23 @@ func (e *Engine) write(ctx context.Context, id int64, s *State, action string, p
 	return data, nil
 }
 func (e *Engine) Action(ctx context.Context, id int64, action string, p map[string]any) (json.RawMessage, error) {
+	ctx = traced(ctx, id, "manual_action")
 	spec, ok := petapi.Find(action)
 	if !ok {
 		return nil, errors.New("接口不在官方宠物清单中")
+	}
+	// Directory selectors and diagnostic reads do not mutate account state and
+	// must not queue behind long-running automatic writes or each other.
+	if !spec.Write {
+		if err := e.online(ctx, id); err != nil {
+			return nil, err
+		}
+		return e.read(ctx, id, action, p)
 	}
 	unlock := e.lock(id)
 	defer unlock()
 	if err := e.online(ctx, id); err != nil {
 		return nil, err
-	}
-	if !spec.Write {
-		return e.read(ctx, id, action, p)
 	}
 	a, err := e.Store.Account(ctx, id)
 	if err != nil {
@@ -302,19 +358,28 @@ func (e *Engine) Resolve(ctx context.Context, id int64, storyID string, clearTas
 func (e *Engine) Tick(ctx context.Context, id int64) error {
 	unlock := e.lock(id)
 	defer unlock()
+	ctx = traced(ctx, id, "scheduler")
 	a, err := e.Store.Account(ctx, id)
 	if err != nil {
+		e.event(ctx, id, "tick", "error", "读取账号状态失败："+err.Error(), nil)
 		return err
 	}
+	e.event(ctx, id, "tick", "start", "开始检查自动任务", map[string]any{"enabled": a.Config.Enabled, "revision": a.Revision, "plan_count": len(a.Config.Plans), "auto_feed": a.Config.Care.Feed, "auto_bathe": a.Config.Care.Bathe})
+	defer func() {
+		e.event(ctx, id, "tick", "complete", a.State.Message, map[string]any{"last_error": a.State.LastError, "next_run": a.State.NextRun, "counts": a.State.Counts, "task": a.State.Task, "pending": a.State.Pending, "verify": a.State.Verify})
+	}()
 	if !a.Config.Enabled {
+		e.decision(ctx, &a, "tick", "自动任务总开关未启用，本轮不会自动操作", nil)
 		return nil
 	}
 	s := &a.State
 	if s.Pending != nil {
-		s.Message = "有待核对的写入请求，自动化已暂停"
+		e.decision(ctx, &a, "tick", "有待核对的写入请求，自动化已暂停", s.Pending)
 		return e.persist(id, *s, nil)
 	}
-	if next, err := time.Parse(time.RFC3339, s.NextRun); err == nil && now().Before(next) {
+	t, _ := ctx.Value(traceKey{}).(trace)
+	if next, err := time.Parse(time.RFC3339, s.NextRun); err == nil && now().Before(next) && t.Source != "manual_check" {
+		e.decision(ctx, &a, "tick", "上轮失败后的退避等待尚未结束", map[string]any{"next_run": s.NextRun})
 		return nil
 	}
 	err = e.step(ctx, &a)
@@ -324,6 +389,7 @@ func (e *Engine) Tick(ctx context.Context, id int64) error {
 		s.Message = "等待重试：" + err.Error()
 		delay := time.Duration(min(30*(1<<min(s.Failures-1, 4)), 300)) * time.Second
 		s.NextRun = now().Add(delay).Format(time.RFC3339)
+		e.event(ctx, id, "tick", "error", s.Message, map[string]any{"next_run": s.NextRun})
 	} else {
 		s.Failures = 0
 		s.NextRun = ""
@@ -350,6 +416,7 @@ type vitals struct {
 
 func (e *Engine) step(ctx context.Context, a *Account) error {
 	id, c, s := a.SelfID, a.Config, &a.State
+	s.Message = ""
 	if err := e.online(ctx, id); err != nil {
 		return err
 	}
@@ -398,22 +465,26 @@ func (e *Engine) step(ctx context.Context, a *Account) error {
 		if last, err := time.Parse(time.RFC3339, s.LastWrite); err == nil && now().Sub(last) < 60*time.Second {
 			return nil
 		}
-		if did, err := e.care(ctx, a, own.PetID, v); did || err != nil {
+		if did, err := e.care(ctx, a, own.PetID, v); did || s.Pending != nil {
 			return err
+		} else if err != nil {
+			e.event(ctx, id, "care", "warning", "照料查询失败，继续检查其他任务："+err.Error(), nil)
 		}
 		_, err := e.social(ctx, a)
 		return err
 	}
 	if !inWindow(now(), c.Start, c.End) {
-		s.Message = "等待运行时间段"
+		e.decision(ctx, a, "schedule", "当前不在运行时间段", map[string]any{"now": now().Format("15:04"), "start": c.Start, "end": c.End})
 		return nil
 	}
 	if t, err := time.Parse(time.RFC3339, s.LastWrite); err == nil && now().Sub(t) < 60*time.Second {
-		s.Message = "等待操作冷却"
+		e.decision(ctx, a, "schedule", "等待操作冷却", map[string]any{"last_write": s.LastWrite, "cooldown_seconds": 60})
 		return nil
 	}
-	if did, err := e.care(ctx, a, own.PetID, v); did || err != nil {
+	if did, err := e.care(ctx, a, own.PetID, v); did || s.Pending != nil {
 		return err
+	} else if err != nil {
+		e.event(ctx, id, "care", "warning", "照料查询失败，继续检查成长计划："+err.Error(), nil)
 	}
 	raw, err = e.read(ctx, id, "get_pet_activity_status", p)
 	if err != nil {
@@ -427,17 +498,19 @@ func (e *Engine) step(ctx context.Context, a *Account) error {
 		return errors.New("活动状态缺少 finished，无法确认空闲")
 	}
 	if activity.StoryID != "" {
-		s.Message = "检测到未由本插件发起的活动，请在接口面板核对或结算"
+		e.decision(ctx, a, "activity", "检测到未由本插件发起的活动，请核对后结算", activity)
 		return nil
 	}
 	for _, plan := range c.Plans {
 		if s.Counts["plan:"+plan.ID] >= plan.Count {
+			e.decision(ctx, a, "plan", "本项成长计划已达今日次数", map[string]any{"plan": plan, "completed": s.Counts["plan:"+plan.ID]})
 			continue
 		}
 		if c.PauseFatigued && (plan.Activity == "school" || plan.Activity == "work") {
 			raw, err = e.read(ctx, id, "get_pet_fatigue_status", p)
 			if err != nil {
-				return err
+				e.decision(ctx, a, "plan", "疲劳查询失败，跳过本项计划："+err.Error(), map[string]any{"plan_id": plan.ID})
+				continue
 			}
 			var fatigue struct {
 				Known    bool `json:"known"`
@@ -447,11 +520,26 @@ func (e *Engine) step(ctx context.Context, a *Account) error {
 				return errors.New("疲劳状态格式错误")
 			}
 			if !fatigue.Known || fatigue.Fatigued {
-				s.Message = "疲劳状态未知或已疲劳，暂缓学习/工作"
+				e.decision(ctx, a, "plan", "疲劳状态未知或已疲劳，暂缓学习/工作", map[string]any{"plan_id": plan.ID, "fatigue": fatigue})
 				continue
 			}
 		}
 		options := map[string]any{"pet_id": own.PetID, "activity": plan.Activity}
+		if plan.Activity == "school" && plan.Stage == nil {
+			overview, err := e.read(ctx, id, "get_pet_activity_overview", map[string]any{"pet_id": own.PetID, "activity": "school"})
+			var stage struct {
+				Current *int `json:"current_stage"`
+			}
+			if err != nil {
+				e.decision(ctx, a, "plan", "读取当前学习阶段失败："+err.Error(), map[string]any{"plan_id": plan.ID})
+				continue
+			}
+			if json.Unmarshal(overview, &stage) != nil || stage.Current == nil || *stage.Current < 0 || *stage.Current > 4 {
+				e.decision(ctx, a, "plan", "当前学习阶段未知，请从选项选择学习阶段", map[string]any{"plan_id": plan.ID, "overview": json.RawMessage(overview)})
+				continue
+			}
+			options["stage"] = *stage.Current
+		}
 		if plan.Stage != nil {
 			options["stage"] = *plan.Stage
 		}
@@ -463,7 +551,8 @@ func (e *Engine) step(ctx context.Context, a *Account) error {
 		}
 		raw, err = e.read(ctx, id, "get_pet_activity_options", options)
 		if err != nil {
-			return err
+			e.decision(ctx, a, "plan", "读取成长目录失败，跳过本项计划："+err.Error(), map[string]any{"plan_id": plan.ID})
+			continue
 		}
 		var catalog struct {
 			Options []struct {
@@ -496,7 +585,7 @@ func (e *Engine) step(ctx context.Context, a *Account) error {
 			})
 			return err
 		}
-		s.Message = "活动目录无可执行选项，保留计划等待下一轮"
+		e.decision(ctx, a, "plan", "所选项目不存在或当前不可执行，等待下一轮", map[string]any{"plan": plan, "catalog": json.RawMessage(raw)})
 	}
 	if did, err := e.social(ctx, a); did || err != nil {
 		return err

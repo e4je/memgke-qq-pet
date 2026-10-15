@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+var ErrUnknownInventory = errors.New("库存未知")
+
 func (e *Engine) foodStock(ctx context.Context, id int64, food string) (float64, error) {
 	raw, err := e.read(ctx, id, "get_pet_food_catalog", nil)
 	if err != nil {
@@ -30,7 +32,7 @@ func (e *Engine) foodStock(ctx context.Context, id int64, food string) (float64,
 			return *f.Balance, nil
 		}
 	}
-	return 0, errors.New("食物库存未知，不能当作零库存自动购买")
+	return 0, ErrUnknownInventory
 }
 func (e *Engine) bathStock(ctx context.Context, id int64, item string) (float64, error) {
 	raw, err := e.read(ctx, id, "get_pet_bath_inventory", nil)
@@ -59,12 +61,16 @@ func (e *Engine) care(ctx context.Context, a *Account, pet string, v vitals) (bo
 	action := ""
 	params := map[string]any{"pet_id": pet}
 	var verification *Verification
+	e.event(ctx, a.SelfID, "care", "info", "检查照料条件", map[string]any{"hunger": v.Hunger, "hunger_threshold": c.Hunger, "cleanliness": v.Cleanliness, "cleanliness_threshold": c.Cleanliness, "feed_enabled": c.Feed, "bathe_enabled": c.Bathe, "feed_today": s.Counts["feed"], "bathe_today": s.Counts["bathe"]})
 	if c.Feed && v.Hunger != nil && *v.Hunger < float64(c.Hunger) && s.Counts["feed"] < 12 {
 		stock, err := e.foodStock(ctx, a.SelfID, c.FoodID)
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrUnknownInventory) {
 			return false, err
 		}
-		if stock > 0 {
+		if stock > 0 || errors.Is(err, ErrUnknownInventory) {
+			if err != nil {
+				e.event(ctx, a.SelfID, "care", "warning", "食物库存未知：仅尝试一次喂食并核对效果，不自动购买", nil)
+			}
 			action = "feed_pet"
 			if c.FoodID != "" {
 				params["food_id"] = c.FoodID
@@ -74,6 +80,8 @@ func (e *Engine) care(ctx context.Context, a *Account, pet string, v vitals) (bo
 			action = "buy_pet_food"
 			params = map[string]any{"count": 1}
 			verification = &Verification{Action: action, Before: stock}
+		} else {
+			e.event(ctx, a.SelfID, "care", "skip", "食物不足，且未允许补购、指定食物不支持补购或已达购买上限", map[string]any{"stock": stock, "purchases_today": s.Counts["purchases"], "purchase_limit": c.PurchaseLimit})
 		}
 	}
 	if action == "" && c.Bathe && v.Cleanliness != nil && *v.Cleanliness < float64(c.Cleanliness) && s.Counts["bathe"] < 12 {
@@ -127,6 +135,7 @@ func (e *Engine) care(ctx context.Context, a *Account, pet string, v vitals) (bo
 		}
 	}
 	if action == "" {
+		e.event(ctx, a.SelfID, "care", "skip", "本轮无照料操作：请检查开关、阈值、库存及每日次数", nil)
 		return false, nil
 	}
 	_, err := e.write(ctx, a.SelfID, s, action, params, func(json.RawMessage) error {

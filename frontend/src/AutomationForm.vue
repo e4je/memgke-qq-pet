@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import type { Config } from "./types";
 import { labels } from "./api";
+import CatalogField from "./CatalogField.vue";
 const props = defineProps<{
   config: Config;
   busy: boolean;
   dirty: boolean;
   available: boolean;
+  account: number;
+  pet?: string;
 }>();
-const emit = defineEmits<{
-  edit: [];
-  save: [];
-  run: [];
-  catalog: [action: string];
-}>();
+const emit = defineEmits<{ edit: []; save: []; run: [] }>();
 function addPlan() {
   props.config.plans.push({
     id: `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -20,6 +18,15 @@ function addPlan() {
     option: "",
     count: 1,
   });
+  emit("edit");
+}
+function resetPlan(index: number) {
+  const p = props.config.plans[index]!;
+  p.option = "";
+  p.stage = undefined;
+  p.career_type = undefined;
+  p.friend_uin = undefined;
+  p.friend_pet_id = undefined;
   emit("edit");
 }
 </script>
@@ -33,7 +40,8 @@ function addPlan() {
       <div>
         <h2>自动任务总开关</h2>
         <p class="muted">
-          每 30 秒检查一次，离线自动等待；未确认的写入会暂停。
+          保存后立即检查，此后每 30
+          秒巡检。离线、等待和跳过原因均记录在运行日志中。
         </p>
       </div>
       <label class="toggle"
@@ -74,11 +82,14 @@ function addPlan() {
               max="100"
           /></label>
         </div>
-        <label
-          >食物 ID<input
-            v-model="config.care.food_id"
-            placeholder="留空使用默认食物"
-        /></label>
+        <CatalogField
+          v-model="config.care.food_id"
+          :account="account"
+          kind="food"
+          label="使用食物"
+          empty-label="默认食物（框架默认）"
+          :disabled="!available"
+        />
         <div class="form-row">
           <label class="check"
             ><input
@@ -93,12 +104,18 @@ function addPlan() {
               max="100"
           /></label>
         </div>
-        <label
-          >洗护用品 ID<input
-            v-model="config.care.item_id"
-            placeholder="使用官方目录中的 ID"
-        /></label>
-        <p class="muted">每类照料每日最多 12 次，每次提交后核对数值。</p>
+        <CatalogField
+          v-model="config.care.item_id"
+          :account="account"
+          kind="bath"
+          label="洗护用品"
+          empty-label="请选择洗护用品"
+          :disabled="!available"
+        />
+        <p class="muted">
+          每类照料每日最多 12
+          次，每次提交后核对数值。库存未知时不会购买；喂食可尝试一次并核对效果。
+        </p>
       </section>
     </div>
     <section class="card">
@@ -106,7 +123,7 @@ function addPlan() {
         <div>
           <h2>成长计划</h2>
           <p class="muted">
-            按顺序执行，完成并结算后计数；项目名使用官方目录原名。
+            按顺序执行，结算完成后计数。直接选择官方课程、岗位或冒险项目。
           </p>
         </div>
         <button type="button" @click="addPlan">＋ 添加计划</button>
@@ -120,58 +137,74 @@ function addPlan() {
         class="plan-row"
       >
         <label
-          >活动<select
-            v-model="plan.activity"
-            @change="
-              plan.stage = undefined;
-              plan.career_type = undefined;
-              plan.friend_uin = undefined;
-              plan.friend_pet_id = undefined;
-            "
-          >
+          >活动<select v-model="plan.activity" @change="resetPlan(index)">
             <option value="school">学习</option>
             <option value="work">工作</option>
             <option value="adventure">冒险</option>
           </select></label
-        ><label
-          >项目原名<input
-            v-model="plan.option"
-            placeholder="留空选首个可执行项目" /></label
-        ><label
+        >
+        <label v-if="plan.activity === 'school'"
+          >学习阶段<select v-model="plan.stage" @change="plan.option = ''">
+            <option :value="undefined">当前可用阶段</option>
+            <option v-for="n in 5" :key="n" :value="n - 1">
+              阶段 {{ n - 1 }}
+            </option>
+          </select></label
+        >
+        <CatalogField
+          v-if="plan.activity === 'work'"
+          :model-value="plan.career_type?.toString() || ''"
+          :account="account"
+          :pet="pet"
+          kind="career"
+          :params="{ activity: 'work' }"
+          label="职业"
+          empty-label="首个可用职业"
+          :disabled="!available"
+          @update:model-value="
+            plan.career_type = $event === '' ? undefined : Number($event);
+            plan.option = '';
+          "
+        />
+        <CatalogField
+          v-if="plan.activity !== 'school'"
+          :model-value="plan.friend_uin || ''"
+          :account="account"
+          kind="friend"
+          label="同行 / 雇佣好友"
+          empty-label="不使用好友"
+          :disabled="!available"
+          @select="
+            plan.friend_uin = $event?.value;
+            plan.friend_pet_id = $event?.raw.pet_id as string | undefined;
+            plan.option = '';
+          "
+        />
+        <CatalogField
+          v-model="plan.option"
+          :account="account"
+          :pet="pet"
+          kind="activity"
+          :params="{
+            activity: plan.activity,
+            ...(plan.stage !== undefined ? { stage: plan.stage } : {}),
+            ...(plan.career_type !== undefined
+              ? { career_type: plan.career_type }
+              : {}),
+            ...(plan.friend_pet_id
+              ? { friend_pet_id: plan.friend_pet_id }
+              : {}),
+          }"
+          label="成长项目"
+          empty-label="自动选择首个可执行项目"
+          :disabled="!available"
+        />
+        <label
           >每日次数<input
             v-model.number="plan.count"
             type="number"
             min="1"
             max="100" /></label
-        ><label v-if="plan.activity === 'school'"
-          >阶段<select v-model="plan.stage">
-            <option :value="undefined">自动</option>
-            <option v-for="n in 5" :key="n" :value="n - 1">{{ n - 1 }}</option>
-          </select></label
-        ><label v-if="plan.activity === 'work'"
-          >职业类型<input
-            :value="plan.career_type"
-            @input="
-              plan.career_type =
-                ($event.target as HTMLInputElement).value === ''
-                  ? undefined
-                  : Number(($event.target as HTMLInputElement).value)
-            "
-            type="number"
-            min="0"
-            placeholder="可选" /></label
-        ><label v-if="plan.activity !== 'school'"
-          >好友 QQ（可选）<input
-            v-model="plan.friend_uin"
-            inputmode="numeric" /></label
-        ><label v-if="plan.activity !== 'school'"
-          >好友宠物 ID（配对填写）<input v-model="plan.friend_pet_id" /></label
-        ><button
-          class="quiet"
-          type="button"
-          @click="emit('catalog', 'get_pet_activity_options')"
-        >
-          查看目录</button
         ><button
           class="delete"
           type="button"
@@ -181,7 +214,7 @@ function addPlan() {
             emit('edit');
           "
         >
-          ×
+          删除
         </button>
       </div>
     </section>
@@ -220,11 +253,22 @@ function addPlan() {
               max="86400"
           /></label>
         </div>
-        <label
-          >好友喂食 ID<input
-            v-model="config.social.food_id"
-            placeholder="默认食物可留空" /></label
-        ><label>好友洗护用品 ID<input v-model="config.social.item_id" /></label>
+        <CatalogField
+          v-model="config.social.food_id"
+          :account="account"
+          kind="food"
+          label="好友喂食使用食物"
+          empty-label="默认食物（框架默认）"
+          :disabled="!available"
+        />
+        <CatalogField
+          v-model="config.social.item_id"
+          :account="account"
+          kind="bath"
+          label="好友洗护用品"
+          empty-label="请选择洗护用品"
+          :disabled="!available"
+        />
         <p class="muted">
           只使用官方宠物好友目录，每个好友的同类动作每天最多一次。
         </p>
@@ -298,9 +342,9 @@ function addPlan() {
           :disabled="busy || dirty || !available"
           @click="emit('run')"
         >
-          立即检查一次</button
+          立即检查并记录日志</button
         ><button class="primary" type="submit" :disabled="busy">
-          {{ busy ? "处理中…" : "保存自动任务" }}
+          {{ busy ? "处理中…" : "保存并应用自动任务" }}
         </button>
       </div>
     </footer>

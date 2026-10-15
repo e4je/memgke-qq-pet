@@ -15,7 +15,7 @@ import (
 func New(engine *automation.Engine, version string, connected func() bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/info", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, 200, map[string]any{"version": version, "connected": connected(), "api_count": len(petapi.Specs), "framework_min": "2.6.0", "contract_date": "2026-10-14", "actions": petapi.Specs})
+		reply(w, 200, map[string]any{"version": version, "connected": connected(), "scheduler": engine.Status(), "api_count": len(petapi.Specs), "framework_min": "2.6.0", "contract_date": "2026-10-14", "actions": petapi.Specs})
 	})
 	mux.HandleFunc("GET /api/accounts", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
@@ -62,12 +62,33 @@ func New(engine *automation.Engine, version string, connected func() bool) http.
 		if !ok {
 			return
 		}
-		logs, err := engine.Store.Logs(r.Context(), id)
+		logs, err := engine.Store.QueryLogs(r.Context(), id, logQuery(r))
 		if err != nil {
 			failure(w, err)
 			return
 		}
 		reply(w, 200, logs)
+	})
+	mux.HandleFunc("GET /api/accounts/{id}/logs/export", func(w http.ResponseWriter, r *http.Request) {
+		id, ok := accountID(w, r)
+		if !ok {
+			return
+		}
+		q := logQuery(r)
+		q.Limit = 5000
+		logs, err := engine.Store.QueryLogs(r.Context(), id, q)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		a, err := engine.Store.Account(r.Context(), id)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="qq-pet-diagnostics-`+strconv.FormatInt(id, 10)+`.json"`)
+		_ = json.NewEncoder(w).Encode(map[string]any{"version": version, "exported_at": time.Now().UTC().Format(time.RFC3339), "account": a, "scheduler": engine.Status(), "logs": logs, "limit": 5000})
 	})
 	mux.HandleFunc("POST /api/accounts/{id}/action", func(w http.ResponseWriter, r *http.Request) {
 		id, ok := accountID(w, r)
@@ -97,7 +118,7 @@ func New(engine *automation.Engine, version string, connected func() bool) http.
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 		defer cancel()
-		if err := engine.Tick(ctx, id); err != nil {
+		if err := engine.Check(ctx, id); err != nil {
 			failure(w, err)
 			return
 		}
@@ -134,6 +155,12 @@ func New(engine *automation.Engine, version string, connected func() bool) http.
 		w.Header().Set("Cache-Control", "no-store")
 		mux.ServeHTTP(w, r)
 	})
+}
+func logQuery(r *http.Request) automation.LogQuery {
+	q := r.URL.Query()
+	before, _ := strconv.ParseInt(q.Get("before"), 10, 64)
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	return automation.LogQuery{Before: before, Limit: limit, Status: q.Get("status"), Action: q.Get("action"), RunID: q.Get("run_id")}
 }
 func accountID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, e := strconv.ParseInt(r.PathValue("id"), 10, 64)

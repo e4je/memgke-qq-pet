@@ -165,7 +165,7 @@ func TestManagedStartupAndRestart(t *testing.T) {
 		}
 		expectedVersion := os.Getenv("QQ_PET_TEST_EXPECTED_VERSION")
 		if expectedVersion == "" {
-			expectedVersion = "2.0.1"
+			expectedVersion = "2.0.3"
 		}
 		if session.Data["version"] != expectedVersion || session.Data["api_count"] != float64(30) {
 			t.Fatalf("invalid info: %v", session)
